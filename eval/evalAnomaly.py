@@ -109,8 +109,20 @@ def main():
         # NON SERVE DAVVERO INVERTIRE
         
         with torch.no_grad(): # senza calcolare i gradienti
-            result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel
+            result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel (Batch, Classi, Altezza, Larghezza)
         anomaly_result = 1.0 - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxlogit)     
+        
+        #Ora facciamo il softmax, IMPLEMENTATO DA NOI
+        soft_result = torch.softmax(result, dim=1) # trasforma i logit in probabilità
+        
+        #MSP per ogni pixel prendo il massimo tra le probabilità delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxsoftmax)
+        anomaly_soft_result = 1.0 - np.max(soft_result.squeeze(0).data.cpu().numpy(), axis=0)
+
+        # calcolo il maxentropy su soft_result
+        anomaly_entropy_result = - np.sum(soft_result.squeeze(0).data.cpu().numpy() * np.log(soft_result.squeeze(0).data.cpu().numpy() + 1e-10), axis=0) # entropia calcolata sui softmax
+
+        # MANCA FARE LE LISTE PER I COSI INTRODOTTI TIPO ENTROPIA E L'ALTRO CHE NON RICORDO
+
         pathGT = path.replace("images", "labels_masks")  # percorso del file che contiene la label              
         if "RoadObsticle21" in pathGT:    # estensione giusta
            pathGT = pathGT.replace("webp", "png")
