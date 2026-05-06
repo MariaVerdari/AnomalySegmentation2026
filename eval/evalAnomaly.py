@@ -6,7 +6,7 @@ import torch
 import random
 from PIL import Image
 import numpy as np
-from erfnet import ERFNet
+from erfnet import ERFNet # importo classe del modello erfnet dal file erfnet.py
 import os.path as osp
 from argparse import ArgumentParser
 from ood_metrics import fpr_at_95_tpr, calc_metrics, plot_roc, plot_pr,plot_barcode
@@ -20,21 +20,22 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-NUM_CHANNELS = 3
-NUM_CLASSES = 20
+NUM_CHANNELS = 3 # rgb
+NUM_CLASSES = 20 #di cityescape 19 + 1
+
 # gpu training specific
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
 input_transform = Compose(
     [
-        Resize((512, 1024), Image.BILINEAR),
-        ToTensor(),
+        Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
+        ToTensor(), # trasforma in tenosore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
         # Normalize([.485, .456, .406], [.229, .224, .225]),
     ]
 )
 
-target_transform = Compose(
+target_transform = Compose( #trasforamzioni per l'etichetta
     [
         Resize((512, 1024), Image.NEAREST),
     ]
@@ -42,6 +43,8 @@ target_transform = Compose(
 
 
 def main():
+
+    # per passare immagine dal terminale 
     parser = ArgumentParser()
     parser.add_argument(
         "--input",
@@ -50,21 +53,25 @@ def main():
         help="A list of space separated input images; "
         "or a single glob pattern such as 'directory/*.jpg'",
     )  
-    parser.add_argument('--loadDir',default="../trained_models/")
-    parser.add_argument('--loadWeights', default="erfnet_pretrained.pth")
-    parser.add_argument('--loadModel', default="erfnet.py")
-    parser.add_argument('--subset', default="val")  #can be val or train (must have labels)
-    parser.add_argument('--datadir', default="/home/shyam/ViT-Adapter/segmentation/data/cityscapes/")
+    parser.add_argument('--loadDir',default="../trained_models/")  #cerca cartella
+    parser.add_argument('--loadWeights', default="erfnet_pretrained.pth") #pesi
+    parser.add_argument('--loadModel', default="erfnet.py") #modello ERFNet
+    parser.add_argument('--subset', default="val")  # che dataset prende #can be val or train (must have labels)
+    
+    #parser.add_argument('--datadir', default="/home/shyam/ViT-Adapter/segmentation/data/cityscapes/")
+    parser.add_argument('--datadir', default="/content/drive/MyDrive/Validation_Dataset/")
+    
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--cpu', action='store_true')
-    args = parser.parse_args()
-    anomaly_score_list = []
-    ood_gts_list = []
+    args = parser.parse_args() #legge dal terminale (o quando lancio su colab)
 
-    if not os.path.exists('results.txt'):
-        open('results.txt', 'w').close()
-    file = open('results.txt', 'a')
+    anomaly_score_list = [] # punteggi di anomalia
+    ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
+
+    if not os.path.exists('results.txt'): # file dei risultati
+        open('results.txt', 'w').close() # crea se non esiste
+    file = open('results.txt', 'a') # se esiste scrive in coda
 
     modelpath = args.loadDir + args.loadModel
     weightspath = args.loadDir + args.loadWeights
@@ -72,14 +79,14 @@ def main():
     print ("Loading model: " + modelpath)
     print ("Loading weights: " + weightspath)
 
-    model = ERFNet(NUM_CLASSES)
+    model = ERFNet(NUM_CLASSES) # creo l'istanza della classe (prende in input il numero delle classi da distinguere)
 
     if (not args.cpu):
-        model = torch.nn.DataParallel(model).cuda()
+        model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
 
     def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
         own_state = model.state_dict()
-        for name, param in state_dict.items():
+        for name, param in state_dict.items(): #state dict associa a ogni layer della rete i suoi pesi
             if name not in own_state:
                 if name.startswith("module."):
                     own_state[name.split("module.")[-1]].copy_(param)
@@ -90,14 +97,17 @@ def main():
                 own_state[name].copy_(param)
         return model
 
-    model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage))
+    model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
-    model.eval()
+   
+    model.eval() #modalità evaluation
     
-    for path in glob.glob(os.path.expanduser(str(args.input[0]))):
+    for path in glob.glob(os.path.expanduser(str(args.input[0]))): #ciclo su tutti i percorsi  delle immagini del dataset
         print(path)
-        images = input_transform((Image.open(path).convert('RGB'))).unsqueeze(0).float().cuda()
-        images = images.permute(0,3,1,2)
+        images = input_transform((Image.open(path).convert('RGB'))).unsqueeze(0).float().cuda() # forza RGB (3 channels), applico trasformazioni dell'input, aggiungo dimensione del batch
+        images = images.permute(0,3,1,2) #[Batch, Canali, Altezza, Larghezza]
+        # SERVE DAVVERO INVERTIRE???
+        
         with torch.no_grad():
             result = model(images)
         anomaly_result = 1.0 - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)            
