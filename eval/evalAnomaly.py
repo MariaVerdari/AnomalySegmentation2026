@@ -105,42 +105,43 @@ def main():
     for path in glob.glob(os.path.expanduser(str(args.input[0]))): #ciclo su tutti i percorsi  delle immagini del dataset
         print(path)
         images = input_transform((Image.open(path).convert('RGB'))).unsqueeze(0).float().cuda() # forza RGB (3 channels), applico trasformazioni dell'input, aggiungo dimensione del batch
-        images = images.permute(0,3,1,2) #[Batch, Canali, Altezza, Larghezza]
-        # SERVE DAVVERO INVERTIRE???
+        # images = images.permute(0,3,1,2) #[Batch, Canali, Altezza, Larghezza]
+        # NON SERVE DAVVERO INVERTIRE
         
-        with torch.no_grad():
-            result = model(images)
-        anomaly_result = 1.0 - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)            
-        pathGT = path.replace("images", "labels_masks")                
-        if "RoadObsticle21" in pathGT:
+        with torch.no_grad(): # senza calcolare i gradienti
+            result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel
+        anomaly_result = 1.0 - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxlogit)     
+        pathGT = path.replace("images", "labels_masks")  # percorso del file che contiene la label              
+        if "RoadObsticle21" in pathGT:    # estensione giusta
            pathGT = pathGT.replace("webp", "png")
         if "fs_static" in pathGT:
            pathGT = pathGT.replace("jpg", "png")                
         if "RoadAnomaly" in pathGT:
            pathGT = pathGT.replace("jpg", "png")  
 
-        mask = Image.open(pathGT)
-        mask = target_transform(mask)
-        ood_gts = np.array(mask)
-
+        mask = Image.open(pathGT) #apre le labels
+        mask = target_transform(mask) # trasforma con resize
+        ood_gts = np.array(mask) # converte in un array NumPy, diventa matrice di 0 e 1 e numeri off topic
+        
+        #questo pezzo è per creare uno standard a prescindere dai singoli dataset: 0 per normale, 1 anomalia, 255 per off topic (non considerato)
         if "RoadAnomaly" in pathGT:
             ood_gts = np.where((ood_gts==2), 1, ood_gts)
         if "LostAndFound" in pathGT:
             ood_gts = np.where((ood_gts==0), 255, ood_gts)
             ood_gts = np.where((ood_gts==1), 0, ood_gts)
-            ood_gts = np.where((ood_gts>1)&(ood_gts<201), 1, ood_gts)
+            ood_gts = np.where((ood_gts>1)&(ood_gts<201), 1, ood_gts) #tutti gli oggetti diventano 1
 
         if "Streethazard" in pathGT:
             ood_gts = np.where((ood_gts==14), 255, ood_gts)
             ood_gts = np.where((ood_gts<20), 0, ood_gts)
             ood_gts = np.where((ood_gts==255), 1, ood_gts)
 
-        if 1 not in np.unique(ood_gts):
+        if 1 not in np.unique(ood_gts): # se non ci sono anomalie passa alla foto dopo
             continue              
-        else:
-             ood_gts_list.append(ood_gts)
-             anomaly_score_list.append(anomaly_result)
-        del result, anomaly_result, ood_gts, mask
+        else:  #altrimenti salva i risultati
+             ood_gts_list.append(ood_gts)  # aggiunge alla lista ground truth
+             anomaly_score_list.append(anomaly_result) # aggunge alla lista dei punteggi di anomalia
+        del result, anomaly_result, ood_gts, mask  # libera memoria una volta salvate le info
         torch.cuda.empty_cache()
 
     file.write( "\n")
@@ -148,26 +149,31 @@ def main():
     ood_gts = np.array(ood_gts_list)
     anomaly_scores = np.array(anomaly_score_list)
 
-    ood_mask = (ood_gts == 1)
-    ind_mask = (ood_gts == 0)
+    # crea maschere per fare distinzione tra pixel anomali e normali, e per escludere quelli off topic (255)
+    ood_mask = (ood_gts == 1)  
+    ind_mask = (ood_gts == 0) # anche 255 viene 0 
 
+    # divide quindi in due arrays1D in base a queste maschere, quello che era una matrice diventa due arrays
     ood_out = anomaly_scores[ood_mask]
     ind_out = anomaly_scores[ind_mask]
 
-    ood_label = np.ones(len(ood_out))
-    ind_label = np.zeros(len(ind_out))
+    ood_label = np.ones(len(ood_out)) # arrays di 1 per i pixel anomali
+    ind_label = np.zeros(len(ind_out)) # arrays di 0 per i pixel normali
     
-    val_out = np.concatenate((ind_out, ood_out))
-    val_label = np.concatenate((ind_label, ood_label))
+    val_out = np.concatenate((ind_out, ood_out)) # unisce i due arrays dei punteggi di anomalia, prima quelli normali poi quelli anomali (le nostre predizioni)
+    val_label = np.concatenate((ind_label, ood_label)) # unisce i due arrays delle label, prima 0 poi 1 (la verità)
 
-    prc_auc = average_precision_score(val_label, val_out)
-    fpr = fpr_at_95_tpr(val_out, val_label)
+    prc_auc = average_precision_score(val_label, val_out) # AUPRC: precisione nel trovare le anomalie
+    fpr = fpr_at_95_tpr(val_out, val_label) #FPR95
 
+    # printa nei result e nel terminale i risultati
     print(f'AUPRC score: {prc_auc*100.0}')
     print(f'FPR@TPR95: {fpr*100.0}')
 
     file.write(('    AUPRC score:' + str(prc_auc*100.0) + '   FPR@TPR95:' + str(fpr*100.0) ))
     file.close()
 
+
+# esegui tutto il codice che c'è dentro main()
 if __name__ == '__main__':
     main()
