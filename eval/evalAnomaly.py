@@ -110,7 +110,7 @@ def main():
         
         with torch.no_grad(): # senza calcolare i gradienti
             result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel (Batch, Classi, Altezza, Larghezza)
-        anomaly_result = 1.0 - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxlogit)     
+        anomaly_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)     
         
         #Ora facciamo il softmax, IMPLEMENTATO DA NOI
         soft_result = torch.softmax(result, dim=1) # trasforma i logit in probabilità
@@ -123,6 +123,8 @@ def main():
 
         # MANCA FARE LE LISTE PER I COSI INTRODOTTI TIPO ENTROPIA E L'ALTRO CHE NON RICORDO
 
+
+        # DOBBIAMO FARE IN MODO CHE FUNZIONI CON TUTTI I DATASET
         pathGT = path.replace("images", "labels_masks")  # percorso del file che contiene la label              
         if "RoadObsticle21" in pathGT:    # estensione giusta
            pathGT = pathGT.replace("webp", "png")
@@ -130,7 +132,7 @@ def main():
            pathGT = pathGT.replace("jpg", "png")                
         if "RoadAnomaly" in pathGT:
            pathGT = pathGT.replace("jpg", "png")  
-
+        print(pathGT)
         mask = Image.open(pathGT) #apre le labels
         mask = target_transform(mask) # trasforma con resize
         ood_gts = np.array(mask) # converte in un array NumPy, diventa matrice di 0 e 1 e numeri off topic
