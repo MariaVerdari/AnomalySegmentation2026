@@ -31,7 +31,7 @@ input_transform = Compose(
     [
         Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
         ToTensor(), # trasforma in tenosore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
-        # Normalize([.485, .456, .406], [.229, .224, .225]),
+        #Normalize([.485, .456, .406], [.229, .224, .225]), # normalizzazione per non so quale dataset
     ]
 )
 
@@ -66,9 +66,14 @@ def main():
     parser.add_argument('--cpu', action='store_true')
     args = parser.parse_args() #legge dal terminale (o quando lancio su colab)
 
-    anomaly_score_list = [] # punteggi di anomalia
+    #creo tutte le liste per salvare i risultati dei vari metodi 
+    anomaly_score_msp_list = [] # punteggi di anomalia con msp
+    anomaly_score_maxentropy_list = [] # punteggi di anomalia calcolati con l'entropia
+    anomaly_score_maxlogit_list = [] # punteggi di anomalia calcolati con maxlogit
+
     ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
 
+    # forse questo blocco spostiamolo a quando siamo pronti a stampare i risultati
     if not os.path.exists('results.txt'): # file dei risultati
         open('results.txt', 'w').close() # crea se non esiste
     file = open('results.txt', 'a') # se esiste scrive in coda
@@ -108,17 +113,20 @@ def main():
         # images = images.permute(0,3,1,2) #[Batch, Canali, Altezza, Larghezza]
         # NON SERVE DAVVERO INVERTIRE
         
+
+
         with torch.no_grad(): # senza calcolare i gradienti
             result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel (Batch, Classi, Altezza, Larghezza)
-        anomaly_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)     
+        # MAXLOGIT
+        anomaly_maxlogit_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)     
         
         #Ora facciamo il softmax, IMPLEMENTATO DA NOI
-        soft_result = torch.softmax(result, dim=1) # trasforma i logit in probabilità
+        soft_result = torch.softmax(result, dim=1) # trasforma i logit in probabilità, non c'entra con i tre result, serve per msp e maxentropy
         
         #MSP per ogni pixel prendo il massimo tra le probabilità delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxsoftmax)
-        anomaly_soft_result = 1.0 - np.max(soft_result.squeeze(0).data.cpu().numpy(), axis=0)
+        anomaly_msp_result = 1.0 - np.max(soft_result.squeeze(0).data.cpu().numpy(), axis=0)
 
-        # calcolo il maxentropy su soft_result
+        #calcolo il maxentropy su soft_result
         anomaly_entropy_result = - np.sum(soft_result.squeeze(0).data.cpu().numpy() * np.log(soft_result.squeeze(0).data.cpu().numpy() + 1e-10), axis=0) # entropia calcolata sui softmax
 
         # MANCA FARE LE LISTE PER I COSI INTRODOTTI TIPO ENTROPIA E L'ALTRO CHE NON RICORDO
@@ -154,37 +162,66 @@ def main():
             continue              
         else:  #altrimenti salva i risultati
              ood_gts_list.append(ood_gts)  # aggiunge alla lista ground truth
-             anomaly_score_list.append(anomaly_result) # aggunge alla lista dei punteggi di anomalia
-        del result, anomaly_result, ood_gts, mask  # libera memoria una volta salvate le info
+             anomaly_score_msp_list.append(anomaly_msp_result) # aggunge alla lista dei punteggi di anomalia
+             anomaly_score_maxentropy_list.append(anomaly_entropy_result) # aggiunge alla lista dei punteggi di anomalia con entropia
+             anomaly_score_maxlogit_list.append(anomaly_maxlogit_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
+    
+        del result, anomaly_msp_result, anomaly_entropy_result, anomaly_maxlogit_result, ood_gts, mask  # libera memoria una volta salvate le info
         torch.cuda.empty_cache()
 
     file.write( "\n")
 
     ood_gts = np.array(ood_gts_list)
-    anomaly_scores = np.array(anomaly_score_list)
+    anomaly_scores_msp = np.array(anomaly_score_msp_list)
+    anomaly_scores_maxentropy = np.array(anomaly_score_maxentropy_list)
+    anomaly_scores_maxlogit = np.array(anomaly_score_maxlogit_list)
+
 
     # crea maschere per fare distinzione tra pixel anomali e normali, e per escludere quelli off topic (255)
     ood_mask = (ood_gts == 1)  
     ind_mask = (ood_gts == 0) # anche 255 viene 0 
 
-    # divide quindi in due arrays1D in base a queste maschere, quello che era una matrice diventa due arrays
-    ood_out = anomaly_scores[ood_mask]
-    ind_out = anomaly_scores[ind_mask]
+    # divide quindi in due arrays1D in base a queste maschere, quello che era una matrice diventa due arrays, per tutti e tre i metodi
+    ood_out_msp = anomaly_scores_msp[ood_mask]
+    ood_out_maxentropy = anomaly_scores_maxentropy[ood_mask]
+    ood_out_maxlogit = anomaly_scores_maxlogit[ood_mask]
+    ind_out_msp = anomaly_scores_msp[ind_mask]
+    ind_out_maxentropy = anomaly_scores_maxentropy[ind_mask]
+    ind_out_maxlogit = anomaly_scores_maxlogit[ind_mask]
 
-    ood_label = np.ones(len(ood_out)) # arrays di 1 per i pixel anomali
-    ind_label = np.zeros(len(ind_out)) # arrays di 0 per i pixel normali
+    ood_label_msp = np.ones(len(ood_out_msp)) # arrays di 1 per i pixel anomali
+    ood_label_maxentropy = np.ones(len(ood_out_maxentropy)) 
+    ood_label_maxlogit = np.ones(len(ood_out_maxlogit))
+    ind_label_msp = np.zeros(len(ind_out_msp)) # arrays di 0 per i pixel normali
+    ind_label_maxentropy = np.zeros(len(ind_out_maxentropy)) 
+    ind_label_maxlogit = np.zeros(len(ind_out_maxlogit)) 
+
+    val_out_msp = np.concatenate((ind_out_msp, ood_out_msp)) # unisce i due arrays dei punteggi di anomalia, prima quelli normali poi quelli anomali (le nostre predizioni)
+    val_label_msp = np.concatenate((ind_label_msp, ood_label_msp)) # unisce i due arrays delle label, prima 0 poi 1 (la verità)
+    val_out_maxentropy = np.concatenate((ind_out_maxentropy, ood_out_maxentropy))
+    val_label_maxentropy = np.concatenate((ind_label_maxentropy, ood_label_maxentropy))
+    val_out_maxlogit = np.concatenate((ind_out_maxlogit, ood_out_maxlogit))
+    val_label_maxlogit = np.concatenate((ind_label_maxlogit, ood_label_maxlogit))
+
+    prc_auc_msp = average_precision_score(val_label_msp, val_out_msp) # AUPRC: precisione nel trovare le anomalie per msp
+    prc_auc_maxentropy = average_precision_score(val_label_maxentropy, val_out_maxentropy)
+    prc_auc_maxlogit = average_precision_score(val_label_maxlogit, val_out_maxlogit)        
     
-    val_out = np.concatenate((ind_out, ood_out)) # unisce i due arrays dei punteggi di anomalia, prima quelli normali poi quelli anomali (le nostre predizioni)
-    val_label = np.concatenate((ind_label, ood_label)) # unisce i due arrays delle label, prima 0 poi 1 (la verità)
-
-    prc_auc = average_precision_score(val_label, val_out) # AUPRC: precisione nel trovare le anomalie
-    fpr = fpr_at_95_tpr(val_out, val_label) #FPR95
+    fpr_msp = fpr_at_95_tpr(val_out_msp, val_label_msp) #FPR95 per msp
+    fpr_maxentropy = fpr_at_95_tpr(val_out_maxentropy, val_label_maxentropy)
+    fpr_maxlogit = fpr_at_95_tpr(val_out_maxlogit, val_label_maxlogit)
 
     # printa nei result e nel terminale i risultati
-    print(f'AUPRC score: {prc_auc*100.0}')
-    print(f'FPR@TPR95: {fpr*100.0}')
+    print(f'AUPRC score with MSP: {prc_auc_msp*100.0}')
+    print(f'FPR@TPR95 with MSP: {fpr_msp*100.0}')
+    print(f'AUPRC score with MaxEntropy: {prc_auc_maxentropy*100.0}')
+    print(f'FPR@TPR95 with MaxEntropy: {fpr_maxentropy*100.0}')
+    print(f'AUPRC score with MaxLogit: {prc_auc_maxlogit*100.0}')
+    print(f'FPR@TPR95 with MaxLogit: {fpr_maxlogit*100.0}')
 
-    file.write(('    AUPRC score:' + str(prc_auc*100.0) + '   FPR@TPR95:' + str(fpr*100.0) ))
+    file.write(('    AUPRC score with MSP:' + str(prc_auc_msp*100.0) + '   FPR@TPR95 with MSP:' + str(fpr_msp*100.0) )) 
+    file.write(('    AUPRC score with MaxEntropy:' + str(prc_auc_maxentropy*100.0) + '   FPR@TPR95 with MaxEntropy:' + str(fpr_maxentropy*100.0) )) 
+    file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) )) 
     file.close()
 
 
