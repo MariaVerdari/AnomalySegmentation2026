@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+from logging import config
 import os
 import cv2
 import glob
@@ -12,6 +13,9 @@ from argparse import ArgumentParser
 from ood_metrics import fpr_at_95_tpr, calc_metrics, plot_roc, plot_pr,plot_barcode
 from sklearn.metrics import roc_auc_score, roc_curve, auc, precision_recall_curve, average_precision_score
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
+from huggingface_hub import hf_hub_download   #per scaricare i pesi da Hugging Face
+import warnings
+
 
 seed = 42
 
@@ -84,11 +88,46 @@ def main():
     print ("Loading model: " + modelpath)
     print ("Loading weights: " + weightspath)
 
-    model = EoMT(NUM_CLASSES) # creo l'istanza della classe (prende in input il numero delle classi da distinguere)
 
+    model = EoMT(NUM_CLASSES) # creo l'istanza della classe (prende in input il numero delle classi da distinguere)
+    # Prendo i pesi da Hugging Face con il codice che era scritto nel notebook su github (Readme del progetto)
+    name = config.get("trainer", {}).get("logger", {}).get("init_args", {}).get("name") # cerca il nome in configs in cui ci sono dei files
+
+    if name is None:
+        warnings.warn("No logger name found in the config. Please specify a model name.")
+    else:
+        try:
+            state_dict_path = hf_hub_download(   #cerca la repo su internet e scarica il file con i pesi, la varibile conterrà il percorso locale
+                repo_id=f"tue-mps/{name}",
+                filename="pytorch_model.bin",
+            )
+
+            is_dinov3 = "dinov3" in name
+
+            # come gestire se il nome del modello contiene la parola "dinov3" che è particolare e il modello stesso si carica i pesi da solo
+            if is_dinov3:
+                model_kwargs["ckpt_path"] = state_dict_path
+                model_kwargs["delta_weights"] = True
+
+
+            if not is_dinov3:
+                state_dict = torch.load(  #carica i pesi se non è dinov3
+                    state_dict_path, map_location=f"cuda:{device}", weights_only=True
+                )
+                model.load_state_dict(state_dict, strict=False) # prende i numeri e li mette nella rete neurale appena creata, caricando solo quello che combacia a livello di layers
+
+        except RepositoryNotFoundError:  #gestisce la situazione in cui si trova la repo su internet
+            warnings.warn(
+                f"Pre-trained model not found for `{name}`. Please load your own checkpoint."
+            )
+
+
+    model.eval() # modalità evaluation, disabilita dropout e batchnorm
+    
     if (not args.cpu):
         model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
 
+    '''
     def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
         own_state = model.state_dict()
         for name, param in state_dict.items(): #state dict associa a ogni layer della rete i suoi pesi
@@ -104,9 +143,9 @@ def main():
 
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
-   
     model.eval() #modalità evaluation
-    
+    '''
+
     for path in glob.glob(os.path.expanduser(str(args.input[0]))): #ciclo su tutti i percorsi  delle immagini del dataset
         print(path)
         images = input_transform((Image.open(path).convert('RGB'))).unsqueeze(0).float().cuda() # forza RGB (3 channels), applico trasformazioni dell'input, aggiungo dimensione del batch
@@ -129,7 +168,7 @@ def main():
         #calcolo il maxentropy su soft_result
         anomaly_entropy_result = - np.sum(soft_result.squeeze(0).data.cpu().numpy() * np.log(soft_result.squeeze(0).data.cpu().numpy() + 1e-10), axis=0) # entropia calcolata sui softmax
 
-        # MANCA FARE LE LISTE PER I COSI INTRODOTTI TIPO ENTROPIA E L'ALTRO CHE NON RICORDO
+        
 
 
         # DOBBIAMO FARE IN MODO CHE FUNZIONI CON TUTTI I DATASET
