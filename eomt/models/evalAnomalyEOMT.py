@@ -15,6 +15,7 @@ from sklearn.metrics import roc_auc_score, roc_curve, auc, precision_recall_curv
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 from huggingface_hub import hf_hub_download   #per scaricare i pesi da Hugging Face
 import warnings
+from huggingface_hub.utils import RepositoryNotFoundError
 
 
 seed = 42
@@ -48,7 +49,7 @@ target_transform = Compose( #trasforamzioni per l'etichetta
 
 def main():
 
-    # per passare immagine dal terminale 
+    # per passare immagine dal terminale
     parser = ArgumentParser()
     parser.add_argument(
         "--input",
@@ -61,16 +62,16 @@ def main():
     parser.add_argument('--loadWeights', default="eomt_pretrained.pth") #pesi
     parser.add_argument('--loadModel', default="eomt.py") #modello EoMT
     parser.add_argument('--subset', default="val")  # che dataset prende #can be val or train (must have labels)
-    
+   
     #parser.add_argument('--datadir', default="/home/shyam/ViT-Adapter/segmentation/data/cityscapes/")
     parser.add_argument('--datadir', default="/content/drive/MyDrive/Validation_Dataset/")
-    
+   
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--cpu', action='store_true')
     args = parser.parse_args() #legge dal terminale (o quando lancio su colab)
 
-    #creo tutte le liste per salvare i risultati dei vari metodi 
+    #creo tutte le liste per salvare i risultati dei vari metodi
     anomaly_score_msp_list = [] # punteggi di anomalia con msp
     anomaly_score_maxentropy_list = [] # punteggi di anomalia calcolati con l'entropia
     anomaly_score_maxlogit_list = [] # punteggi di anomalia calcolati con maxlogit
@@ -91,6 +92,7 @@ def main():
 
     model = EoMT(NUM_CLASSES) # creo l'istanza della classe (prende in input il numero delle classi da distinguere)
     # Prendo i pesi da Hugging Face con il codice che era scritto nel notebook su github (Readme del progetto)
+    '''
     name = config.get("trainer", {}).get("logger", {}).get("init_args", {}).get("name") # cerca il nome in configs in cui ci sono dei files
 
     if name is None:
@@ -121,13 +123,13 @@ def main():
                 f"Pre-trained model not found for `{name}`. Please load your own checkpoint."
             )
 
-
-    model.eval() # modalità evaluation, disabilita dropout e batchnorm
-    
+    '''
+   
+   
     if (not args.cpu):
         model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
 
-    '''
+   
     def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
         own_state = model.state_dict()
         for name, param in state_dict.items(): #state dict associa a ogni layer della rete i suoi pesi
@@ -144,31 +146,31 @@ def main():
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
     model.eval() #modalità evaluation
-    '''
+   
 
     for path in glob.glob(os.path.expanduser(str(args.input[0]))): #ciclo su tutti i percorsi  delle immagini del dataset
         print(path)
         images = input_transform((Image.open(path).convert('RGB'))).unsqueeze(0).float().cuda() # forza RGB (3 channels), applico trasformazioni dell'input, aggiungo dimensione del batch
         # images = images.permute(0,3,1,2) #[Batch, Canali, Altezza, Larghezza]
         # NON SERVE DAVVERO INVERTIRE
-        
+       
 
 
         with torch.no_grad(): # senza calcolare i gradienti
             result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel (Batch, Classi, Altezza, Larghezza)
         # MAXLOGIT
-        anomaly_maxlogit_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)     
-        
+        anomaly_maxlogit_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)    
+       
         #Ora facciamo il softmax, IMPLEMENTATO DA NOI
         soft_result = torch.softmax(result, dim=1) # trasforma i logit in probabilità, non c'entra con i tre result, serve per msp e maxentropy
-        
+       
         #MSP per ogni pixel prendo il massimo tra le probabilità delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxsoftmax)
         anomaly_msp_result = 1.0 - np.max(soft_result.squeeze(0).data.cpu().numpy(), axis=0)
 
         #calcolo il maxentropy su soft_result
         anomaly_entropy_result = - np.sum(soft_result.squeeze(0).data.cpu().numpy() * np.log(soft_result.squeeze(0).data.cpu().numpy() + 1e-10), axis=0) # entropia calcolata sui softmax
 
-        
+       
 
 
         # DOBBIAMO FARE IN MODO CHE FUNZIONI CON TUTTI I DATASET
@@ -183,7 +185,7 @@ def main():
         mask = Image.open(pathGT) #apre le labels
         mask = target_transform(mask) # trasforma con resize
         ood_gts = np.array(mask) # converte in un array NumPy, diventa matrice di 0 e 1 e numeri off topic
-        
+       
         #questo pezzo è per creare uno standard a prescindere dai singoli dataset: 0 per normale, 1 anomalia, 255 per off topic (non considerato)
         if "RoadAnomaly" in pathGT:
             ood_gts = np.where((ood_gts==2), 1, ood_gts)
@@ -204,7 +206,7 @@ def main():
              anomaly_score_msp_list.append(anomaly_msp_result) # aggunge alla lista dei punteggi di anomalia
              anomaly_score_maxentropy_list.append(anomaly_entropy_result) # aggiunge alla lista dei punteggi di anomalia con entropia
              anomaly_score_maxlogit_list.append(anomaly_maxlogit_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
-    
+   
         del result, anomaly_msp_result, anomaly_entropy_result, anomaly_maxlogit_result, ood_gts, mask  # libera memoria una volta salvate le info
         torch.cuda.empty_cache()
 
@@ -218,7 +220,7 @@ def main():
 
     # crea maschere per fare distinzione tra pixel anomali e normali, e per escludere quelli off topic (255)
     ood_mask = (ood_gts == 1)  
-    ind_mask = (ood_gts == 0) # anche 255 viene 0 
+    ind_mask = (ood_gts == 0) # anche 255 viene 0
 
     # divide quindi in due arrays1D in base a queste maschere, quello che era una matrice diventa due arrays, per tutti e tre i metodi
     ood_out_msp = anomaly_scores_msp[ood_mask]
@@ -229,11 +231,11 @@ def main():
     ind_out_maxlogit = anomaly_scores_maxlogit[ind_mask]
 
     ood_label_msp = np.ones(len(ood_out_msp)) # arrays di 1 per i pixel anomali
-    ood_label_maxentropy = np.ones(len(ood_out_maxentropy)) 
+    ood_label_maxentropy = np.ones(len(ood_out_maxentropy))
     ood_label_maxlogit = np.ones(len(ood_out_maxlogit))
     ind_label_msp = np.zeros(len(ind_out_msp)) # arrays di 0 per i pixel normali
-    ind_label_maxentropy = np.zeros(len(ind_out_maxentropy)) 
-    ind_label_maxlogit = np.zeros(len(ind_out_maxlogit)) 
+    ind_label_maxentropy = np.zeros(len(ind_out_maxentropy))
+    ind_label_maxlogit = np.zeros(len(ind_out_maxlogit))
 
     val_out_msp = np.concatenate((ind_out_msp, ood_out_msp)) # unisce i due arrays dei punteggi di anomalia, prima quelli normali poi quelli anomali (le nostre predizioni)
     val_label_msp = np.concatenate((ind_label_msp, ood_label_msp)) # unisce i due arrays delle label, prima 0 poi 1 (la verità)
@@ -245,7 +247,7 @@ def main():
     prc_auc_msp = average_precision_score(val_label_msp, val_out_msp) # AUPRC: precisione nel trovare le anomalie per msp
     prc_auc_maxentropy = average_precision_score(val_label_maxentropy, val_out_maxentropy)
     prc_auc_maxlogit = average_precision_score(val_label_maxlogit, val_out_maxlogit)        
-    
+   
     fpr_msp = fpr_at_95_tpr(val_out_msp, val_label_msp) #FPR95 per msp
     fpr_maxentropy = fpr_at_95_tpr(val_out_maxentropy, val_label_maxentropy)
     fpr_maxlogit = fpr_at_95_tpr(val_out_maxlogit, val_label_maxlogit)
@@ -258,12 +260,14 @@ def main():
     print(f'AUPRC score with MaxLogit: {prc_auc_maxlogit*100.0}')
     print(f'FPR@TPR95 with MaxLogit: {fpr_maxlogit*100.0}')
 
-    file.write(('    AUPRC score with MSP:' + str(prc_auc_msp*100.0) + '   FPR@TPR95 with MSP:' + str(fpr_msp*100.0) )) 
-    file.write(('    AUPRC score with MaxEntropy:' + str(prc_auc_maxentropy*100.0) + '   FPR@TPR95 with MaxEntropy:' + str(fpr_maxentropy*100.0) )) 
-    file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) )) 
+    file.write(('    AUPRC score with MSP:' + str(prc_auc_msp*100.0) + '   FPR@TPR95 with MSP:' + str(fpr_msp*100.0) ))
+    file.write(('    AUPRC score with MaxEntropy:' + str(prc_auc_maxentropy*100.0) + '   FPR@TPR95 with MaxEntropy:' + str(fpr_maxentropy*100.0) ))
+    file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) ))
     file.close()
 
 
 # esegui tutto il codice che c'è dentro main()
 if __name__ == '__main__':
     main()
+
+
