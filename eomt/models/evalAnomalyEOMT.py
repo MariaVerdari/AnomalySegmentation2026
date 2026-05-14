@@ -96,6 +96,8 @@ def main():
     model = EoMT(NUM_CLASSES) # creo l'istanza della classe (prende in input il numero delle classi da distinguere)
     # Prendo i pesi da Hugging Face con il codice che era scritto nel notebook su github (Readme del progetto)
     
+
+    '''
     name = config.get("trainer", {}).get("logger", {}).get("init_args", {}).get("name") # cerca il nome in configs in cui ci sono dei files
 
     if name is None:
@@ -126,13 +128,13 @@ def main():
                 f"Pre-trained model not found for `{name}`. Please load your own checkpoint."
             )
 
-    
+    '''
    
    
     if (not args.cpu):
         model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
 
-    '''
+    
     def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
         own_state = model.state_dict()
         for name, param in state_dict.items(): #state dict associa a ogni layer della rete i suoi pesi
@@ -148,7 +150,7 @@ def main():
 
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
-    '''
+    
     model.eval() #modalità evaluation
    
 
