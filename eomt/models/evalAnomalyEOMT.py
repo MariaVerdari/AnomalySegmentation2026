@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from logging import config
 import os
+from xml.parsers.expat import model
 import cv2
 import glob
 import torch
@@ -16,6 +17,8 @@ from torchvision.transforms import Compose, Resize, ToTensor, Normalize
 from huggingface_hub import hf_hub_download   #per scaricare i pesi da Hugging Face
 import warnings
 from huggingface_hub.utils import RepositoryNotFoundError
+import torch.nn.functional as F
+
 
 
 seed = 42
@@ -92,7 +95,7 @@ def main():
 
     model = EoMT(NUM_CLASSES) # creo l'istanza della classe (prende in input il numero delle classi da distinguere)
     # Prendo i pesi da Hugging Face con il codice che era scritto nel notebook su github (Readme del progetto)
-    '''
+    
     name = config.get("trainer", {}).get("logger", {}).get("init_args", {}).get("name") # cerca il nome in configs in cui ci sono dei files
 
     if name is None:
@@ -123,13 +126,13 @@ def main():
                 f"Pre-trained model not found for `{name}`. Please load your own checkpoint."
             )
 
-    '''
+    
    
    
     if (not args.cpu):
         model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
 
-   
+    '''
     def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
         own_state = model.state_dict()
         for name, param in state_dict.items(): #state dict associa a ogni layer della rete i suoi pesi
@@ -145,6 +148,7 @@ def main():
 
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
+    '''
     model.eval() #modalità evaluation
    
 
@@ -155,9 +159,29 @@ def main():
         # NON SERVE DAVVERO INVERTIRE
        
 
-
+        '''
         with torch.no_grad(): # senza calcolare i gradienti
             result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel (Batch, Classi, Altezza, Larghezza)
+        '''
+
+        with torch.no_grad():
+            mask_logits_list, class_logits_list = model(images) #output dal modello EoMT
+            
+            # previsioni dell'ultimo layer [-1]
+            mask_logits = mask_logits_list[-1]   #  [Batch, Queries, H, W]
+            class_logits = class_logits_list[-1] #  [Batch, Queries, Num_Classes + 1]
+
+            mask_probs = torch.sigmoid(mask_logits) # le maschere diventano valori tra 0 e 1
+            
+            class_probs = torch.softmax(class_logits, dim=-1)[:, :, :-1] # diventano probabilità ed escludo void
+
+            result = torch.einsum("bqc, bqhw -> bchw", class_probs, mask_probs) # combino le maschere e le classi facendo moltiplicazione tra matrici
+
+            # result sarà [1, 20, 512, 1024] 
+            result = F.interpolate(result, size=(512, 1024), mode="bilinear", align_corners=False) # si fa in modo che le misure siano quelle che abbiamo messo in input_transform e target_trasform
+            
+        
+        
         # MAXLOGIT
         anomaly_maxlogit_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)    
        
@@ -167,10 +191,15 @@ def main():
         #MSP per ogni pixel prendo il massimo tra le probabilità delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxsoftmax)
         anomaly_msp_result = 1.0 - np.max(soft_result.squeeze(0).data.cpu().numpy(), axis=0)
 
-        #calcolo il maxentropy su soft_result
+        #calcolo il MAXENTROPY su soft_result
         anomaly_entropy_result = - np.sum(soft_result.squeeze(0).data.cpu().numpy() * np.log(soft_result.squeeze(0).data.cpu().numpy() + 1e-10), axis=0) # entropia calcolata sui softmax
 
-       
+
+        #calcolo RbA
+        rba_anomaly = - torch.sum(result, dim=1) # somma su tutte le classi e viene [Batch, Altezza, Larghezza]
+            
+        anomaly_rba_result = rba_anomaly.squeeze(0).cpu().numpy() # si traforma in numpy e si toglie la dim del batch per metterlo nella lista
+        # quindi per ogni pixel ho un punteggio di anomalia
 
 
         # DOBBIAMO FARE IN MODO CHE FUNZIONI CON TUTTI I DATASET
@@ -216,6 +245,7 @@ def main():
     anomaly_scores_msp = np.array(anomaly_score_msp_list)
     anomaly_scores_maxentropy = np.array(anomaly_score_maxentropy_list)
     anomaly_scores_maxlogit = np.array(anomaly_score_maxlogit_list)
+    anomaly_scores_rba = np.array(anomaly_rba_result)
 
 
     # crea maschere per fare distinzione tra pixel anomali e normali, e per escludere quelli off topic (255)
@@ -226,16 +256,22 @@ def main():
     ood_out_msp = anomaly_scores_msp[ood_mask]
     ood_out_maxentropy = anomaly_scores_maxentropy[ood_mask]
     ood_out_maxlogit = anomaly_scores_maxlogit[ood_mask]
+    ood_out_rba = anomaly_scores_rba[ood_mask]
     ind_out_msp = anomaly_scores_msp[ind_mask]
     ind_out_maxentropy = anomaly_scores_maxentropy[ind_mask]
     ind_out_maxlogit = anomaly_scores_maxlogit[ind_mask]
+    ind_out_rba = anomaly_scores_rba[ind_mask]
+
+
 
     ood_label_msp = np.ones(len(ood_out_msp)) # arrays di 1 per i pixel anomali
     ood_label_maxentropy = np.ones(len(ood_out_maxentropy))
     ood_label_maxlogit = np.ones(len(ood_out_maxlogit))
+    ood_label_rba = np.ones(len(ood_out_rba))
     ind_label_msp = np.zeros(len(ind_out_msp)) # arrays di 0 per i pixel normali
     ind_label_maxentropy = np.zeros(len(ind_out_maxentropy))
     ind_label_maxlogit = np.zeros(len(ind_out_maxlogit))
+    ind_label_rba = np.zeros(len(ind_out_rba))
 
     val_out_msp = np.concatenate((ind_out_msp, ood_out_msp)) # unisce i due arrays dei punteggi di anomalia, prima quelli normali poi quelli anomali (le nostre predizioni)
     val_label_msp = np.concatenate((ind_label_msp, ood_label_msp)) # unisce i due arrays delle label, prima 0 poi 1 (la verità)
@@ -243,14 +279,18 @@ def main():
     val_label_maxentropy = np.concatenate((ind_label_maxentropy, ood_label_maxentropy))
     val_out_maxlogit = np.concatenate((ind_out_maxlogit, ood_out_maxlogit))
     val_label_maxlogit = np.concatenate((ind_label_maxlogit, ood_label_maxlogit))
+    val_out_rba = np.concatenate((ind_out_rba, ood_out_rba))
+    val_label_rba = np.concatenate((ind_label_rba, ood_label_rba))
 
     prc_auc_msp = average_precision_score(val_label_msp, val_out_msp) # AUPRC: precisione nel trovare le anomalie per msp
     prc_auc_maxentropy = average_precision_score(val_label_maxentropy, val_out_maxentropy)
-    prc_auc_maxlogit = average_precision_score(val_label_maxlogit, val_out_maxlogit)        
+    prc_auc_maxlogit = average_precision_score(val_label_maxlogit, val_out_maxlogit)
+    prc_auc_rba = average_precision_score(val_label_rba, val_out_rba)        
    
     fpr_msp = fpr_at_95_tpr(val_out_msp, val_label_msp) #FPR95 per msp
     fpr_maxentropy = fpr_at_95_tpr(val_out_maxentropy, val_label_maxentropy)
     fpr_maxlogit = fpr_at_95_tpr(val_out_maxlogit, val_label_maxlogit)
+    fpr_rba = fpr_at_95_tpr(val_out_rba, val_label_rba)
 
     # printa nei result e nel terminale i risultati
     print(f'AUPRC score with MSP: {prc_auc_msp*100.0}')
@@ -259,10 +299,13 @@ def main():
     print(f'FPR@TPR95 with MaxEntropy: {fpr_maxentropy*100.0}')
     print(f'AUPRC score with MaxLogit: {prc_auc_maxlogit*100.0}')
     print(f'FPR@TPR95 with MaxLogit: {fpr_maxlogit*100.0}')
+    print(f'AUPRC score with RbA: {prc_auc_rba*100.0}')
+    print(f'FPR@TPR95 with RbA: {fpr_rba*100.0}')
 
-    file.write(('    AUPRC score with MSP:' + str(prc_auc_msp*100.0) + '   FPR@TPR95 with MSP:' + str(fpr_msp*100.0) ))
-    file.write(('    AUPRC score with MaxEntropy:' + str(prc_auc_maxentropy*100.0) + '   FPR@TPR95 with MaxEntropy:' + str(fpr_maxentropy*100.0) ))
-    file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) ))
+    file.write(('    AUPRC score with MSP:' + str(prc_auc_msp*100.0) + '   FPR@TPR95 with MSP:' + str(fpr_msp*100.0) + '\n'))
+    file.write(('    AUPRC score with MaxEntropy:' + str(prc_auc_maxentropy*100.0) + '   FPR@TPR95 with MaxEntropy:' + str(fpr_maxentropy*100.0) + '\n'))
+    file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) + '\n'))
+    file.write(('    AUPRC score with RbA:' + str(prc_auc_rba*100.0) + '   FPR@TPR95 with RbA:' + str(fpr_rba*100.0) + '\n'))
     file.close()
 
 
