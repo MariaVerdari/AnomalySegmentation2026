@@ -31,8 +31,9 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 
+
 NUM_CHANNELS = 3 # rgb
-NUM_CLASSES = 20 #di cityescape 19 + 1
+NUM_CLASSES = 19 # EOMT NE AGGIUNGE 1?
 
 # gpu training specific
 torch.backends.cudnn.deterministic = True
@@ -100,9 +101,10 @@ def main():
     #AGGIUNTA ENCODER
     encoder = ViT(
         img_size=(512, 1024),   # <-- IL PEZZO OBBLIGATORIO CHE MANCAVA!
-        patch_size=14,          # <-- Visto che il modello si chiama 'patch14'
-        backbone_name="vit_base_patch14_reg4_dinov2"
+        patch_size=16,          # <-- CAMBIATO DA 14 A 16 PERCHE NON COMBACIAVA
+        backbone_name="vit_base_patch16"
     )
+
 
     model = EoMT(
         encoder=encoder,
