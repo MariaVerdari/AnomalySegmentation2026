@@ -144,9 +144,8 @@ def main():
             )
 
     '''
-   
- 
     
+    '''
     def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
         own_state = model.state_dict()
         for name, param in state_dict.items(): #state dict associa a ogni layer della rete i suoi pesi
@@ -160,8 +159,36 @@ def main():
                 own_state[name].copy_(param)
         return model
 
+    
+'''
+#NUOVA VERSIONE CON NOMI GIUSTI 
+    def load_my_state_dict(model, state_dict):  
+            own_state = model.state_dict()
+            for name, param in state_dict.items(): 
+                
+                # 1. Puliamo il nome della chiave dai prefissi extra
+                clean_name = name
+                if clean_name.startswith("network."):
+                    clean_name = clean_name.replace("network.", "")
+                if clean_name.startswith("module."):
+                    clean_name = clean_name.replace("module.", "")
+                    
+                # 2. Controlliamo se la chiave pulita esiste nel modello
+                if clean_name not in own_state:
+                    print(name, " non caricato (chiave pulita cercata:", clean_name, ")")
+                    continue
+                else:
+                    # 3. Se le dimensioni combaciano, copia i pesi
+                    if own_state[clean_name].shape == param.shape:
+                        own_state[clean_name].copy_(param)
+                    else:
+                        print(f"Dimension mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
+                        
+            return model
+
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
+
 
      #PARALLELIZZARE SOLO ORA 
     if (not args.cpu):
