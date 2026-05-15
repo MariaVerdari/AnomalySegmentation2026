@@ -96,15 +96,18 @@ def main():
     print ("Loading weights: " + weightspath)
 
     #AGGIUNTA ENCODER
-    encoder = ViT(backbone_name="vit_base_patch14_reg4_dinov2")
+    encoder = ViT(
+        img_size=(512, 1024),   # <-- IL PEZZO OBBLIGATORIO CHE MANCAVA!
+        patch_size=14,          # <-- Visto che il modello si chiama 'patch14'
+        backbone_name="vit_base_patch14_reg4_dinov2"
+    )
 
     model = EoMT(
         encoder=encoder,
         num_classes=NUM_CLASSES,
         num_q=100,
         num_blocks=3
-    )
-    # creo l'istanza della classe (prende in input il numero delle classi da distinguere e il numero di queries e l'encoder)
+    ) # creo l'istanza della classe (prende in input il numero delle classi da distinguere e il numero di queries e l'encoder)
     
 
     '''
