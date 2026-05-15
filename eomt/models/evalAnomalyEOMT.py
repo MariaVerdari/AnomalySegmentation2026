@@ -81,6 +81,8 @@ def main():
     anomaly_score_msp_list = [] # punteggi di anomalia con msp
     anomaly_score_maxentropy_list = [] # punteggi di anomalia calcolati con l'entropia
     anomaly_score_maxlogit_list = [] # punteggi di anomalia calcolati con maxlogit
+    anomaly_score_rba_list = [] # punteggi di anomalia calcolati con rba
+
 
     ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
 
@@ -250,8 +252,10 @@ def main():
              anomaly_score_msp_list.append(anomaly_msp_result) # aggunge alla lista dei punteggi di anomalia
              anomaly_score_maxentropy_list.append(anomaly_entropy_result) # aggiunge alla lista dei punteggi di anomalia con entropia
              anomaly_score_maxlogit_list.append(anomaly_maxlogit_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
+             anomaly_score_rba_list.append(anomaly_rba_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
+
    
-        del result, anomaly_msp_result, anomaly_entropy_result, anomaly_maxlogit_result, ood_gts, mask  # libera memoria una volta salvate le info
+        del result, anomaly_msp_result, anomaly_entropy_result, anomaly_maxlogit_result, anomaly_rba_result, ood_gts, mask  # libera memoria una volta salvate le info
         torch.cuda.empty_cache()
 
     file.write( "\n")
@@ -260,7 +264,7 @@ def main():
     anomaly_scores_msp = np.array(anomaly_score_msp_list)
     anomaly_scores_maxentropy = np.array(anomaly_score_maxentropy_list)
     anomaly_scores_maxlogit = np.array(anomaly_score_maxlogit_list)
-    anomaly_scores_rba = np.array(anomaly_rba_result)
+    anomaly_scores_rba = np.array(anomaly_score_rba_list)
 
 
     # crea maschere per fare distinzione tra pixel anomali e normali, e per escludere quelli off topic (255)
@@ -272,6 +276,7 @@ def main():
     ood_out_maxentropy = anomaly_scores_maxentropy[ood_mask]
     ood_out_maxlogit = anomaly_scores_maxlogit[ood_mask]
     ood_out_rba = anomaly_scores_rba[ood_mask]
+
     ind_out_msp = anomaly_scores_msp[ind_mask]
     ind_out_maxentropy = anomaly_scores_maxentropy[ind_mask]
     ind_out_maxlogit = anomaly_scores_maxlogit[ind_mask]
