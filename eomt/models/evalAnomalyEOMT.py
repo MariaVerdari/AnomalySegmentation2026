@@ -102,8 +102,7 @@ def main():
     encoder = ViT(
         img_size=(512, 1024),   # <-- IL PEZZO OBBLIGATORIO CHE MANCAVA!
         patch_size=16,          # <-- CAMBIATO DA 14 A 16 PERCHE NON COMBACIAVA
-        backbone_name="vit_base_patch16"
-    )
+        backbone_name="vit_base_patch14_reg4_dinov2"    )
 
 
     model = EoMT(
