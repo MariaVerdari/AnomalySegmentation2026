@@ -145,10 +145,7 @@ def main():
 
     '''
    
-   
-    if (not args.cpu):
-        model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
-
+ 
     
     def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
         own_state = model.state_dict()
@@ -165,6 +162,11 @@ def main():
 
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
+
+     #PARALLELIZZARE SOLO ORA 
+    if (not args.cpu):
+        model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
+
     
     model.eval() #modalità evaluation
    
