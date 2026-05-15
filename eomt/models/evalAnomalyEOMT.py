@@ -18,6 +18,9 @@ from huggingface_hub import hf_hub_download   #per scaricare i pesi da Hugging F
 import warnings
 from huggingface_hub.utils import RepositoryNotFoundError
 import torch.nn.functional as F
+#from models.vit import ViT
+from vit import ViT
+
 
 
 
@@ -93,8 +96,13 @@ def main():
     print ("Loading weights: " + weightspath)
 
 
-    model = EoMT(NUM_CLASSES) # creo l'istanza della classe (prende in input il numero delle classi da distinguere)
-    # Prendo i pesi da Hugging Face con il codice che era scritto nel notebook su github (Readme del progetto)
+    model = EoMT(
+        encoder=encoder,
+        num_classes=NUM_CLASSES,
+        num_q=100,
+        num_blocks=3
+    )
+    # creo l'istanza della classe (prende in input il numero delle classi da distinguere e il numero di queries e l'encoder)
     
 
     '''
