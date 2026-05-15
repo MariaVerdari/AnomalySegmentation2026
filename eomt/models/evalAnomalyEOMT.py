@@ -95,6 +95,8 @@ def main():
     print ("Loading model: " + modelpath)
     print ("Loading weights: " + weightspath)
 
+    #AGGIUNTA ENCODER
+    encoder = ViT(backbone_name="vit_base_patch14_reg4_dinov2")
 
     model = EoMT(
         encoder=encoder,
