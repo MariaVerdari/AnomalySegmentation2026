@@ -186,6 +186,23 @@ def main():
                         
             return model
 
+    #DEBUG
+    pesi_salvati = torch.load(weightspath, map_location='cpu')
+    
+    print("\n" + "="*40)
+    print("🔍 DEBUG: PRIME 10 CHIAVI NEL FILE .BIN:")
+    print("="*40)
+    for k in list(pesi_salvati.keys())[:10]:
+        print(k)
+
+    print("\n" + "="*40)
+    print("🔍 DEBUG: PRIME 10 CHIAVI NEL TUO MODELLO:")
+    print("="*40)
+    for k in list(model.state_dict().keys())[:10]:
+        print(k)
+    print("="*40 + "\n")
+    # --- FINE BLOCCO DI DEBUG ---
+
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
 
