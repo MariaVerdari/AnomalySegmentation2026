@@ -247,6 +247,9 @@ def main():
     if (not args.cpu):
         model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
 
+
+
+
     
     model.eval() #modalità evaluation
    
@@ -262,6 +265,7 @@ def main():
         with torch.no_grad(): # senza calcolare i gradienti
             result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel (Batch, Classi, Altezza, Larghezza)
         '''
+
 
         with torch.no_grad():
 
@@ -281,7 +285,11 @@ def main():
             result = F.interpolate(result, size=(512, 1024), mode="bilinear", align_corners=False) # si fa in modo che le misure siano quelle che abbiamo messo in input_transform e target_trasform
             
         
-        
+
+                
+
+
+
         # MAXLOGIT
         anomaly_maxlogit_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)    
        
