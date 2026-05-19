@@ -306,7 +306,7 @@ def main():
         #calcolo RbA
         #CONTROLLARE IL MENO E IL LOGIT/PROBABILITà
 
-        rba_anomaly = torch.sum(torch.tanh(result), dim=1) # somma su tutte le classi e viene [Batch, Altezza, Larghezza]
+        rba_anomaly =- torch.sum(torch.tanh(result), dim=1) # somma su tutte le classi e viene [Batch, Altezza, Larghezza]
             
         anomaly_rba_result = rba_anomaly.squeeze(0).cpu().numpy() # si traforma in numpy e si toglie la dim del batch per metterlo nella lista
         # quindi per ogni pixel ho un punteggio di anomalia
