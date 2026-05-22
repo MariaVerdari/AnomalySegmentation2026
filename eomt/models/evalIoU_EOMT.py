@@ -5,6 +5,7 @@
 
 ### abbiamo usato ioueval
 
+from eomt.models import vit
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -21,8 +22,10 @@ from torchvision.transforms import Compose, CenterCrop, Normalize, Resize
 from torchvision.transforms import ToTensor, ToPILImage
 
 from dataset import cityscapes
-from models.vit import ViT
-from models.eomt import EoMT
+#from models.vit import ViT
+#from models.eomt import EoMT
+from vit import ViT
+from eomt import EoMT   
 from transform import Relabel, ToLabel, Colorize
 from iouEval import iouEval, getColorEntry
 
