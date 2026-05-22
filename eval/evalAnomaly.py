@@ -201,6 +201,10 @@ def main():
     ood_out_msp = anomaly_scores_msp[ood_mask]
     ood_out_maxentropy = anomaly_scores_maxentropy[ood_mask]
     ood_out_maxlogit = anomaly_scores_maxlogit[ood_mask]
+    ood_out_msp_temp_05 = anomaly_scores_msp_temp_05[ood_mask]
+    ood_out_msp_temp_075 = anomaly_scores_msp_temp_075[ood_mask]
+    ood_out_msp_temp_11 = anomaly_scores_msp_temp_11[ood_mask]
+
     ind_out_msp = anomaly_scores_msp[ind_mask]
     ind_out_maxentropy = anomaly_scores_maxentropy[ind_mask]
     ind_out_maxlogit = anomaly_scores_maxlogit[ind_mask]
@@ -211,6 +215,10 @@ def main():
     ood_label_msp = np.ones(len(ood_out_msp)) # arrays di 1 per i pixel anomali
     ood_label_maxentropy = np.ones(len(ood_out_maxentropy)) 
     ood_label_maxlogit = np.ones(len(ood_out_maxlogit))
+    ood_label_msp_temp_05 = np.ones(len(ood_out_msp_temp_05))
+    ood_label_msp_temp_075 = np.ones(len(ood_out_msp_temp_075))
+    ood_label_msp_temp_11 = np.ones(len(ood_out_msp_temp_11)) 
+
     ind_label_msp = np.zeros(len(ind_out_msp)) # arrays di 0 per i pixel normali
     ind_label_maxentropy = np.zeros(len(ind_out_maxentropy)) 
     ind_label_maxlogit = np.zeros(len(ind_out_maxlogit)) 
