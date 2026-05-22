@@ -5,7 +5,9 @@
 
 ### abbiamo usato ioueval
 
-from eomt.models import vit
+#from eomt.models import vit
+import vit
+
 import numpy as np
 import torch
 import torch.nn.functional as F
