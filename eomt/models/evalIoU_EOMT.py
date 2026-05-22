@@ -3,6 +3,8 @@
 # Eduardo Romera
 #######################
 
+### abbiamo usato ioueval
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -117,6 +119,10 @@ def main(args):
 
 
     iouEvalVal = iouEval(NUM_CLASSES)
+    iouEvalVal_05 = iouEval(NUM_CLASSES)
+    iouEvalVal_075 = iouEval(NUM_CLASSES)
+    iouEvalVal_11 = iouEval(NUM_CLASSES)
+
 
     start = time.time()
 
@@ -145,25 +151,58 @@ def main(args):
             # 4. Trovo la classe vincente per ogni pixel!
             # .max(1)[1] significa: guarda l'asse delle classi (1) e prendi l'indice [1] del valore massimo
             predicted_classes = result_probs.max(1)[1].unsqueeze(1).data
+            
+            #temperature sclaing
+            temperature = [0.5,0.75,1.1]
+            scaled_result = result_probs / temperature[0]
+            predicted_classes_05 = scaled_result.max(1)[1].unsqueeze(1).data
+            scaled_result = result_probs / temperature[1]
+            predicted_classes_075 = scaled_result.max(1)[1].unsqueeze(1).data
+            scaled_result = result_probs / temperature[2]
+            predicted_classes_11 = scaled_result.max(1)[1].unsqueeze(1).data 
 
         # Passo le predizioni e le maschere ground truth al valutatore IoU
         iouEvalVal.addBatch(predicted_classes, labels)
+        iouEvalVal_05.addBatch(predicted_classes_05, labels)
+        iouEvalVal_075.addBatch(predicted_classes_075, labels)
+        iouEvalVal_11.addBatch(predicted_classes_11, labels)
 
         filenameSave = filename[0].split("leftImg8bit/")[1] 
         print (step, filenameSave)
+        
+        
 
 
     iouVal, iou_classes = iouEvalVal.getIoU()
+    iouVal_05, iou_classes_05 = iouEvalVal_05.getIoU()
+    iouVal_075, iou_classes_075 = iouEvalVal_075.getIoU()
+    iouVal_11, iou_classes_11 = iouEvalVal_11.getIoU()
 
     iou_classes_str = []
     for i in range(iou_classes.size(0)):
         iouStr = getColorEntry(iou_classes[i])+'{:0.2f}'.format(iou_classes[i]*100) + '\033[0m'
         iou_classes_str.append(iouStr)
 
+    iou_classes_05_str = []
+    for i in range(iou_classes_05.size(0)):
+        iouStr = getColorEntry(iou_classes_05[i])+'{:0.2f}'.format(iou_classes_05[i]*100) + '\033[0m'
+        iou_classes_05_str.append(iouStr)
+
+    iou_classes_075_str = []
+    for i in range(iou_classes_075.size(0)):
+        iouStr = getColorEntry(iou_classes_075[i])+'{:0.2f}'.format(iou_classes_075[i]*100) + '\033[0m'
+        iou_classes_075_str.append(iouStr)
+
+    iou_classes_11_str = []
+    for i in range(iou_classes_11.size(0)):
+        iouStr = getColorEntry(iou_classes_11[i])+'{:0.2f}'.format(iou_classes_11[i]*100) + '\033[0m'
+        iou_classes_11_str.append(iouStr)
+
     print("---------------------------------------")
     print("Took ", time.time()-start, "seconds")
     print("=======================================")
     #print("TOTAL IOU: ", iou * 100, "%")
+    '''
     print("Per-Class IoU:")
     print(iou_classes_str[0], "Road")
     print(iou_classes_str[1], "sidewalk")
@@ -185,8 +224,18 @@ def main(args):
     print(iou_classes_str[17], "motorcycle")
     print(iou_classes_str[18], "bicycle")
     print("=======================================")
+    '''
+    # calcolo la miou
     iouStr = getColorEntry(iouVal)+'{:0.2f}'.format(iouVal*100) + '\033[0m'
     print ("MEAN IoU: ", iouStr, "%")
+
+    # calcolo la miou con temperature scaling
+    iouStr_05 = getColorEntry(iouVal_05)+'{:0.2f}'.format(iouVal_05*100) + '\033[0m'
+    iouStr_075 = getColorEntry(iouVal_075)+'{:0.2f}'.format(iouVal_075*100) + '\033[0m'
+    iouStr_11 = getColorEntry(iouVal_11)+'{:0.2f}'.format(iouVal_11*100) + '\033[0m'
+    print ("MEAN IoU (Temp 0.5): ", iouStr_05, "%")
+    print ("MEAN IoU (Temp 0.75): ", iouStr_075, "%")
+    print ("MEAN IoU (Temp 1.1): ", iouStr_11, "%")     
 
 if __name__ == '__main__':
     parser = ArgumentParser()
