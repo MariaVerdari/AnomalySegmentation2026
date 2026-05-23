@@ -43,7 +43,7 @@ input_transform = Compose(
     [
         Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
         ToTensor(), # trasforma in tenosore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
-        #Normalize([.485, .456, .406], [.229, .224, .225]), # normalizzazione per non so quale dataset
+        Normalize([.485, .456, .406], [.229, .224, .225]), # normalizzazione per non so quale dataset
     ]
 )
 

@@ -51,7 +51,8 @@ class MapToTrainIds(object):
 image_transform = ToPILImage()
 input_transform_cityscapes = Compose([
     Resize(512, Image.BILINEAR),
-    ToTensor(),
+    ToTensor()
+    #Normalize([.485, .456, .406], [.229, .224, .225])
 ])
 target_transform_cityscapes = Compose([
     Resize(512, Image.NEAREST),
