@@ -361,17 +361,23 @@ def main():
 
    
              # === LOGICA SALVATAGGIO HEATMAP SU DRIVE ===
+
+             #ROSSO RBA PIù ALTA, BLU PIù BASSO 
+
+             cosidered_anomaly_result =anomaly_msp_result #da CAMBIARE A PIACERE
+
+
              if len(ood_gts_list) <= 10:
                  debug_stem = os.path.splitext(os.path.basename(path))[0]
                  output_drive_dir = "/content/drive/MyDrive/Validation_Dataset/RoadObsticle21/heatmaps_rba"
                  os.makedirs(output_drive_dir, exist_ok=True)
 
                  # 1. Normalizzazione min-max locale a [0, 255]
-                 cmap_min, cmap_max = anomaly_rba_result.min(), anomaly_rba_result.max()
+                 cmap_min, cmap_max = cosidered_anomaly_result.min(), cosidered_anomaly_result.max()
                  if cmap_max - cmap_min > 1e-8:
-                     normalized_map = (anomaly_rba_result - cmap_min) / (cmap_max - cmap_min)
+                     normalized_map = (cosidered_anomaly_result - cmap_min) / (cmap_max - cmap_min)
                  else:
-                     normalized_map = np.zeros_like(anomaly_rba_result)
+                     normalized_map = np.zeros_like(cosidered_anomaly_result)
                  map_u8 = (normalized_map * 255).astype(np.uint8)
 
                  # 2. Applicazione della colormap JET (Rosso = Anomalia)
@@ -380,14 +386,14 @@ def main():
                  # 3. Lettura e ridimensionamento dell'immagine originale a 1024x512
                  img_bgr = cv2.imread(path)
                  if img_bgr is not None:
-                     h, w = anomaly_rba_result.shape
+                     h, w = cosidered_anomaly_result.shape
                      img_bgr = cv2.resize(img_bgr, (w, h), interpolation=cv2.INTER_LINEAR)
 
                      # 4. Sovrapposizione (trasparenza al 50%)
                      overlay = cv2.addWeighted(heatmap, 0.5, img_bgr, 0.5, 0)
 
                      # 5. Salvataggio su Google Drive
-                     debug_name = os.path.join(output_drive_dir, f"heatmap_rba_{debug_stem}.jpg")
+                     debug_name = os.path.join(output_drive_dir, f"heatmap_{debug_stem}.jpg")
                      cv2.imwrite(debug_name, overlay)
                      print(f"-> [HEATMAP TRASPARENTE {len(ood_gts_list)}/10] Salvata in: {debug_name}")
 
