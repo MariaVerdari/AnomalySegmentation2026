@@ -87,6 +87,38 @@ def main():
     anomaly_score_msp_temp_075_list = [] # punteggi di anomalia con msp temp 0.75
     anomaly_score_msp_temp_11_list = [] # punteggi di anomalia con msp temp 1.1
 
+    # === LOGICA SALVATAGGIO HEATMAP SU DRIVE ===
+    if len(ood_gts_list) <= 10:
+        debug_stem = os.path.splitext(os.path.basename(path))[0]
+        output_drive_dir = "/content/drive/MyDrive/Validation_Dataset/RoadObsticle21/heatmaps_rba"
+        os.makedirs(output_drive_dir, exist_ok=True)
+
+        # 1. Normalizzazione min-max locale a [0, 255]
+        cmap_min, cmap_max = anomaly_rba_result.min(), anomaly_rba_result.max()
+        if cmap_max - cmap_min > 1e-8:
+            normalized_map = (anomaly_rba_result - cmap_min) / (cmap_max - cmap_min)
+        else:
+            normalized_map = np.zeros_like(anomaly_rba_result)
+        map_u8 = (normalized_map * 255).astype(np.uint8)
+
+        # 2. Applicazione della colormap JET (Rosso = Anomalia)
+        heatmap = cv2.applyColorMap(map_u8, cv2.COLORMAP_JET)
+
+        # 3. Lettura e ridimensionamento dell'immagine originale a 1024x512
+        img_bgr = cv2.imread(path)
+        if img_bgr is not None:
+            h, w = anomaly_rba_result.shape
+            img_bgr = cv2.resize(img_bgr, (w, h), interpolation=cv2.INTER_LINEAR)
+
+            # 4. Sovrapposizione (trasparenza al 50%)
+            overlay = cv2.addWeighted(heatmap, 0.5, img_bgr, 0.5, 0)
+
+            # 5. Salvataggio su Google Drive
+            debug_name = os.path.join(output_drive_dir, f"heatmap_rba_{debug_stem}.jpg")
+            cv2.imwrite(debug_name, overlay)
+            print(f"-> [HEATMAP TRASPARENTE {len(ood_gts_list)}/10] Salvata in: {debug_name}")
+
+
 
     ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
 
