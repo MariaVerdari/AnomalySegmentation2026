@@ -101,6 +101,10 @@ def main(args):
     # 2. CARICO I PESI (Con la funzione per interpolare il pos_embed)
     weightspath = args.loadDir + args.loadWeights
     print(f"Caricamento pesi da: {weightspath}")
+
+
+
+    '''
     
     def load_my_state_dict(model, state_dict):  
         own_state = model.state_dict()
@@ -131,7 +135,62 @@ def main(args):
                     own_state[clean_name].copy_(param_final)
                     print(f"✅ pos_embed interpolato con successo!")
         return model
+    '''
 
+    #NUOVA VERSIONE CON NOMI GIUSTI 
+    def load_my_state_dict(model, state_dict):  
+            own_state = model.state_dict()
+            for name, param in state_dict.items(): 
+                
+                # 1. Puliamo il nome della chiave dai prefissi extra
+                clean_name = name
+                if clean_name.startswith("network."):
+                    clean_name = clean_name.replace("network.", "")
+                if clean_name.startswith("module."):
+                    clean_name = clean_name.replace("module.", "")
+                    
+                # 2. Controlliamo se la chiave pulita esiste nel modello
+                if clean_name not in own_state:
+                    print(name, " non caricato (chiave pulita cercata:", clean_name, ")")
+                    continue
+                else:
+                    # 3. Se le dimensioni combaciano, copia i pesi
+                    if own_state[clean_name].shape == param.shape:
+                        own_state[clean_name].copy_(param)
+                    
+                    # 2. SEZIONE NUOVA: Se è il pos_embed, lo interpoliamo dinamicamente!
+                    elif "pos_embed" in clean_name:
+                        
+                        # I pesi sono [1, 4096, 768] (griglia 64x64). Vogliamo [1, 2048, 768] (griglia 32x64).
+                        dim = param.shape[-1]
+                        
+                        # Calcoliamo la griglia originale (radice quadrata di 4096 = 64)
+                        orig_size = int(param.shape[1] ** 0.5) 
+                        
+                        # Sappiamo che le nostre immagini sono 512x1024 e patch è 16
+                        H_new = 512 // 16  # 32
+                        W_new = 1024 // 16 # 64
+                        
+                        # Trasformiamo la sequenza 1D in un'immagine 2D per poterla ridimensionare
+                        param_reshaped = param.reshape(1, orig_size, orig_size, dim).permute(0, 3, 1, 2)
+                        
+                        # Ridimensioniamo (interpolazione bilineare)
+                        param_interpolated = F.interpolate(param_reshaped, size=(H_new, W_new), mode='bilinear', align_corners=False)
+                        
+                        # La riportiamo alla forma di sequenza 1D [1, 2048, 768]
+                        param_final = param_interpolated.permute(0, 2, 3, 1).reshape(1, -1, dim)
+                        
+                        # Copiamo i pesi adattati nel modello
+                        own_state[clean_name].copy_(param_final)
+                        print(f"✅ pos_embed interpolato con successo da 4096 a 2048!")
+                    else:
+                        print(f"Dimension mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
+                        
+            return model
+
+
+
+                 
     # Carica i pesi originali dal file
     state_dict = torch.load(weightspath, map_location="cpu", weights_only=True)
     
