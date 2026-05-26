@@ -148,10 +148,12 @@ def main(args):
     loader = DataLoader(cityscapes(args.datadir, input_transform_cityscapes, target_transform_cityscapes, subset=args.subset), num_workers=args.num_workers, batch_size=args.batch_size, shuffle=False)
 
 
-    iouEvalVal = iouEval(NUM_CLASSES)
-    iouEvalVal_05 = iouEval(NUM_CLASSES)
-    iouEvalVal_075 = iouEval(NUM_CLASSES)
-    iouEvalVal_11 = iouEval(NUM_CLASSES)
+    iouEvalVal = iouEval(NUM_CLASSES+1)
+    iouEvalVal_05 = iouEval(NUM_CLASSES+1)
+    iouEvalVal_075 = iouEval(NUM_CLASSES+1)
+    iouEvalVal_11 = iouEval(NUM_CLASSES+1)
+
+    
 
 
     start = time.time()
@@ -191,22 +193,42 @@ def main(args):
             scaled_result = result_probs / temperature[2]
             predicted_classes_11 = scaled_result.max(1)[1].unsqueeze(1).data 
 
+
+        # --- 3. MASCHERAMENTO DEI PIXEL VOID (Previene falsi positivi) ---
+        ignore_mask = (labels == 19)
+        predicted_classes[ignore_mask] = 19
+        predicted_classes_05[ignore_mask] = 19
+        predicted_classes_075[ignore_mask] = 19
+        predicted_classes_11[ignore_mask] = 19
+
         # Passo le predizioni e le maschere ground truth al valutatore IoU
         iouEvalVal.addBatch(predicted_classes, labels)
         iouEvalVal_05.addBatch(predicted_classes_05, labels)
         iouEvalVal_075.addBatch(predicted_classes_075, labels)
         iouEvalVal_11.addBatch(predicted_classes_11, labels)
+                
+
+       
 
         filenameSave = filename[0].split("leftImg8bit/")[1] 
         print (step, filenameSave)
+    
         
-        
+   
 
 
-    iouVal, iou_classes = iouEvalVal.getIoU()
-    iouVal_05, iou_classes_05 = iouEvalVal_05.getIoU()
-    iouVal_075, iou_classes_075 = iouEvalVal_075.getIoU()
-    iouVal_11, iou_classes_11 = iouEvalVal_11.getIoU()
+
+    # Recuperiamo solo i vettori IoU per singola classe
+    _, iou_classes = iouEvalVal.getIoU()
+    _, iou_classes_05 = iouEvalVal_05.getIoU()
+    _, iou_classes_075 = iouEvalVal_075.getIoU()
+    _, iou_classes_11 = iouEvalVal_11.getIoU()
+
+    # Calcoliamo la media dividendo rigorosamente per 19 (NUM_CLASSES)
+    iouVal = iou_classes[:NUM_CLASSES].mean().item()
+    iouVal_05 = iou_classes_05[:NUM_CLASSES].mean().item()
+    iouVal_075 = iou_classes_075[:NUM_CLASSES].mean().item()
+    iouVal_11 = iou_classes_11[:NUM_CLASSES].mean().item()
 
     iou_classes_str = []
     for i in range(iou_classes.size(0)):
