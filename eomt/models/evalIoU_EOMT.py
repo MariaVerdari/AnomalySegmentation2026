@@ -95,14 +95,6 @@ def main(args):
         num_blocks=3
     )
 
-    if (not args.cpu):
-        model = torch.nn.DataParallel(model).cuda()
-
-    # 2. CARICO I PESI (Con la funzione per interpolare il pos_embed)
-    weightspath = args.loadDir + args.loadWeights
-    print(f"Caricamento pesi da: {weightspath}")
-
-
 
     '''
     
@@ -143,11 +135,14 @@ def main(args):
             for name, param in state_dict.items(): 
                 
                 # 1. Puliamo il nome della chiave dai prefissi extra
+
+                
+                # 1. Puliamo il nome della chiave usando lo slicing sicuro
                 clean_name = name
                 if clean_name.startswith("network."):
-                    clean_name = clean_name.replace("network.", "")
+                    clean_name = clean_name[len("network."):]
                 if clean_name.startswith("module."):
-                    clean_name = clean_name.replace("module.", "")
+                    clean_name = clean_name[len("module."):]
                     
                 # 2. Controlliamo se la chiave pulita esiste nel modello
                 if clean_name not in own_state:
@@ -189,7 +184,10 @@ def main(args):
             return model
 
 
-
+      
+    # 2. CARICO I PESI PRIMA SUL MODELLO GREGGIO
+    weightspath = args.loadDir + args.loadWeights
+    print(f"Caricamento pesi da: {weightspath}")
                  
     # Carica i pesi originali dal file
     state_dict = torch.load(weightspath, map_location="cpu", weights_only=True)
@@ -197,6 +195,12 @@ def main(args):
     # Applica la nostra funzione di pulizia e interpolazione
     model = load_my_state_dict(model, state_dict)
     print("Model and weights LOADED successfully")
+
+    # 3. SOLO ADESSO PARALLELIZZI E MANDI IN GPU
+    if (not args.cpu):
+        model = torch.nn.DataParallel(model).cuda()
+
+
 
     model.eval()
 
