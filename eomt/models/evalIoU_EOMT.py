@@ -32,7 +32,7 @@ from transform import Relabel, ToLabel, Colorize
 from iouEval import iouEval, getColorEntry
 
 NUM_CHANNELS = 3
-NUM_CLASSES = 20 # 19 classi valide + 1 classe ignore (void)
+NUM_CLASSES = 19 # 19 classi valide + 1 classe ignore (void)
 
 
 # blocco aggiunto per le etichette sfasate 
