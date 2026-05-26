@@ -77,9 +77,9 @@ input_transform_cityscapes = Compose([
 ])
 target_transform_cityscapes = Compose([
     Resize(512, Image.NEAREST),
-    #MapToTrainIds(),
+    MapToTrainIds(),
     ToLabel(),
-    Relabel(255, 19),   #ignore label to 19
+    #Relabel(255, 19),   #ignore label to 19
 ])
 
 def main(args):
