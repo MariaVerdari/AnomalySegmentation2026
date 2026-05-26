@@ -13,7 +13,7 @@ import time
 from PIL import Image
 from argparse import ArgumentParser
 
-from torch.autograd import Variable
+from torch.autograd import Variable          
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, CenterCrop, Normalize, Resize
 from torchvision.transforms import ToTensor, ToPILImage
@@ -28,7 +28,8 @@ NUM_CLASSES = 20
 
 # blocco aggiunto per le etichette sfasate 
 
-class MapToTrainIds(object):
+'''
+class MapToTrainIds(object): #stile nostro che non è top
     def __init__(self):
         mapping = {
             0: 255, 1: 255, 2: 255, 3: 255, 4: 255, 5: 255, 6: 255, 7: 0, 8: 1, 9: 255,
@@ -45,6 +46,26 @@ class MapToTrainIds(object):
         img_np = np.array(img)
         mapped_np = self.lut[img_np]
         return Image.fromarray(mapped_np)
+'''
+    
+class MapToTrainIds(object): #stile di federica
+    def __init__(self):
+        # Inizializziamo tutto a 19 (il valore void dell'ERFNet)
+        self.lut = np.full(256, 19, dtype=np.uint8)
+        
+        # Mappiamo SOLO i labelId originali di Cityscapes nei rispettivi trainId
+        train_mapping = {
+            7: 0, 8: 1, 11: 2, 12: 3, 13: 4, 17: 5, 19: 6, 20: 7,
+            21: 8, 22: 9, 23: 10, 24: 11, 25: 12, 26: 13, 27: 14,
+            28: 15, 31: 16, 32: 17, 33: 18
+        }
+        for lid, tid in train_mapping.items():
+            self.lut[lid] = tid
+
+    def __call__(self, img):
+        img_np = np.array(img)
+        mapped_np = self.lut[img_np]
+        return Image.fromarray(mapped_np)
     
 
 
@@ -56,9 +77,9 @@ input_transform_cityscapes = Compose([
 ])
 target_transform_cityscapes = Compose([
     Resize(512, Image.NEAREST),
-    MapToTrainIds(),
+    #MapToTrainIds(),
     ToLabel(),
-    Relabel(255, 19),   #ignore label to 19
+    #Relabel(255, 19),   #ignore label to 19
 ])
 
 def main(args):
