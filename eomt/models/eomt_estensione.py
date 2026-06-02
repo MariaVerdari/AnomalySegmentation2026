@@ -6,6 +6,10 @@
 # used under the Apache 2.0 License.
 # ---------------------------------------------------------------
 
+
+# MODIFICARLO PER DARE come output le queries a un certo livello
+
+
 from typing import Optional
 import torch
 import torch.nn as nn
@@ -196,11 +200,20 @@ class EoMT(nn.Module):
             elif hasattr(block, "layer_scale2"):
                 x = x + block.layer_scale2(mlp_out)
 
-        mask_logits, class_logits = self._predict(self.encoder.backbone.norm(x))
+
+
+        #####  ESTRAZIONE QUERY  #####
+
+        # Normalizziamo il tensore come nel file originale per predict e per estrarre le queries
+        x_norm = self.encoder.backbone.norm(x)
+        mask_logits, class_logits = self._predict(x_norm)
+        
         mask_logits_per_layer.append(mask_logits)
         class_logits_per_layer.append(class_logits)
 
-        return (
-            mask_logits_per_layer,
-            class_logits_per_layer,
-        )
+
+        # Estraiamo esattamente le prime num_q righe dal tensore normalizzato (le queries)
+        updated_queries = x_norm[:, :self.num_q, :]
+        return updated_queries, mask_logits_per_layer, class_logits_per_layer
+
+        
