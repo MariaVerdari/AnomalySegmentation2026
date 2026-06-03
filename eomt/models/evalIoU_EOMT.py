@@ -34,7 +34,7 @@ from iouEval import iouEval, getColorEntry
 NUM_CHANNELS = 3
 NUM_CLASSES = 19 # 19 classi valide + 1 classe ignore (void)
 
-'''
+
 # blocco aggiunto per le etichette sfasate 
 
 class MapToTrainIds(object):
@@ -55,7 +55,7 @@ class MapToTrainIds(object):
         mapped_np = self.lut[img_np]
         return Image.fromarray(mapped_np)
     
-'''
+
 
 image_transform = ToPILImage()
 
@@ -67,7 +67,7 @@ input_transform_cityscapes = Compose([
 ])
 target_transform_cityscapes = Compose([
     Resize((512, 1024), Image.NEAREST),
-    #MapToTrainIds(),
+    MapToTrainIds(),
     ToLabel(),
     Relabel(255, 19),   # Mappa il void standard di Cityscapes (255) a 19
 ])
@@ -263,6 +263,11 @@ def main(args):
         predicted_classes_05[ignore_mask] = 19
         predicted_classes_075[ignore_mask] = 19
         predicted_classes_11[ignore_mask] = 19
+
+
+        # Controlla che non ci siano valori fuori range prima di mandare in crash la GPU
+        assert labels.max() < 20, f"Errore: trovato valore etichetta {labels.max()} > 19"
+        assert predicted_classes.max() < 20, f"Errore: trovato valore predizione {predicted_classes.max()} > 19"
 
         # Passo le predizioni e le maschere ground truth al valutatore IoU
         iouEvalVal.addBatch(predicted_classes, labels)
