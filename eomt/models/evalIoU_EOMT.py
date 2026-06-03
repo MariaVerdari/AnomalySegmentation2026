@@ -60,19 +60,7 @@ class MapToTrainIds(object):
 image_transform = ToPILImage()
 
 
-'''
-# Impostiamo la risoluzione fissa 512x1024 richiesta dall'encoder
 
-
-input_transform_cityscapes = Compose([
-    Resize((512, 1024), Image.BILINEAR),
-    ToTensor(),
-    Normalize([.485, .456, .406], [.229, .224, .225])
-])
-
-'''
-
-from torchvision import transforms
 
 
 # 1. Nel transform di input
@@ -103,20 +91,8 @@ def main(args):
     print ("Loading weights: " + weightspath)
 
 
-    '''
-    # 1. COSTRUISCO L'ENCODER E IL MODELLO EOMT
-    print("Inizializzazione del modello EoMT...")
-    encoder = ViT(
-        #img_size=(512, 1024),
-        img_size=(1024, 1024),  
-        patch_size=16,
-        backbone_name="vit_base_patch14_reg4_dinov2"
-    )
 
-    '''
-
-
-    # 1. COSTRUISCO L'ENCODER E IL MODELLO EOMT
+    #  COSTRUISCO L'ENCODER E IL MODELLO EOMT
     print("Inizializzazione del modello EoMT...")
     
    
@@ -137,40 +113,7 @@ def main(args):
     )
 
 
-    '''
-    
-    def load_my_state_dict(model, state_dict):  
-        own_state = model.state_dict()
-        for name, param in state_dict.items(): 
-            clean_name = name
-            if clean_name.startswith("network."):
-                clean_name = clean_name.replace("network.", "")
-            if clean_name.startswith("module."):
-                clean_name = clean_name.replace("module.", "")
-                
-            if clean_name not in own_state:
-                continue
-            else:
-                if own_state[clean_name].shape == param.shape:
-                    own_state[clean_name].copy_(param)
-                elif "pos_embed" in clean_name:
-                    # Interpolazione dinamica del pos_embed
-                    dim = param.shape[-1]
-                    orig_size = int(param.shape[1] ** 0.5) 
-                    
-                    H_new = 512 // 16 # Usa 14 se hai impostato patch_size=14 nell'encoder
-                    W_new = 1024 // 16 
-                    
-                    param_reshaped = param.reshape(1, orig_size, orig_size, dim).permute(0, 3, 1, 2)
-                    param_interpolated = F.interpolate(param_reshaped, size=(H_new, W_new), mode='bilinear', align_corners=False)
-                    param_final = param_interpolated.permute(0, 2, 3, 1).reshape(1, -1, dim)
-                    
-                    own_state[clean_name].copy_(param_final)
-                    print(f"✅ pos_embed interpolato con successo!")
-        return model
-    '''
-
-    #NUOVA VERSIONE CON NOMI GIUSTI 
+  
     def load_my_state_dict(model, state_dict):  
         own_state = model.state_dict()
         for name, param in state_dict.items(): 
@@ -187,12 +130,12 @@ def main(args):
             if own_state[clean_name].shape == param.shape:
                 own_state[clean_name].copy_(param)
             else:
-                print(f"❌ Shape mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
+                print(f" Shape mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
                 
         return model
 
       
-    # 2. CARICO I PESI PRIMA SUL MODELLO GREGGIO
+    #  CARICO I PESI PRIMA SUL MODELLO GREGGIO
     weightspath = args.loadDir + args.loadWeights
     print(f"Caricamento pesi da: {weightspath}")
                  
@@ -202,29 +145,8 @@ def main(args):
 
 
 
-
-
-    # 1. Trova il pos_embed per ricavare risoluzione e patch_size
-    for k, v in state_dict.items():
-        if "pos_embed" in k:
-            print(f"CHIAVE: {k}")
-            print(f"  Shape: {v.shape}  → [1, num_tokens, embed_dim]")
-
-    # 2. Trova il patch embedding per ricavare patch_size e canali input
-    for k, v in state_dict.items():
-        if "patch_embed" in k or "proj.weight" in k:
-            print(f"CHIAVE: {k}")
-            print(f"  Shape: {v.shape}  → [embed_dim, canali_input, patch_h, patch_w]")
-
-    # 3. Stampa tutte le chiavi per avere il quadro completo
-    print("\n--- TUTTE LE CHIAVI ---")
-    for k, v in state_dict.items():
-        print(f"{k}: {v.shape}")
         
-
-
-        
-    # Applica la nostra funzione di pulizia e interpolazione
+    # Applica la funzione di pulizia e interpolazione
     model = load_my_state_dict(model, state_dict)
 
 
@@ -233,14 +155,12 @@ def main(args):
         enc = model.module.encoder
     else:
         enc = model.encoder
-    print("pixel_mean:", enc.pixel_mean.flatten())
-    print("pixel_std: ", enc.pixel_std.flatten())
-
+   
 
 
     print("Model and weights LOADED successfully")
 
-    # 3. SOLO ADESSO PARALLELIZZI E MANDI IN GPU
+    # SOLO ADESSO PARALLELIZZI E MANDI IN GPU
     if (not args.cpu):
         model = torch.nn.DataParallel(model).cuda()
 
@@ -296,20 +216,6 @@ def main(args):
 
 
            
-
-            '''
-            result_probs = F.interpolate(result_probs, size=(512, 1024), mode="bilinear", align_corners=False)
-            
-
-
-            # 4. Trovo la classe vincente per ogni pixel!
-            # .max(1)[1] significa: guarda l'asse delle classi (1) e prendi l'indice [1] del valore massimo
-
-            
-            predicted_classes = result_probs.max(1)[1].unsqueeze(1).data
-
-            '''
-            # 5. Argmax finale (Aggiunto .unsqueeze(1) per evitare il crash)
             predicted_classes = result_probs.argmax(dim=1).unsqueeze(1).data
 
 
@@ -328,7 +234,7 @@ def main(args):
             predicted_classes_11 = scaled_result.argmax(dim=1).unsqueeze(1).data
             
 
-        # --- 3. MASCHERAMENTO DEI PIXEL VOID (Previene falsi positivi) ---
+        # ---  MASCHERAMENTO DEI PIXEL VOID (Previene falsi positivi) ---
         ignore_mask = (labels == 19)
         predicted_classes[ignore_mask] = 19
         predicted_classes_05[ignore_mask] = 19
