@@ -59,12 +59,31 @@ class MapToTrainIds(object):
 
 image_transform = ToPILImage()
 
+
+'''
 # Impostiamo la risoluzione fissa 512x1024 richiesta dall'encoder
+
+
 input_transform_cityscapes = Compose([
     Resize((512, 1024), Image.BILINEAR),
     ToTensor(),
     Normalize([.485, .456, .406], [.229, .224, .225])
 ])
+
+'''
+
+from torchvision import transforms
+
+input_transform_cityscapes = transforms.Compose([
+    transforms.Resize((512, 1024)),
+    transforms.ToTensor(),
+    # Inverte i canali da RGB a BGR lungo la dimensione del colore
+    transforms.Lambda(lambda x: x[[2, 1, 0], :, :]), 
+    # Normalizzazione con medie e std per l'ordine BGR (ImageNet invertito)
+    transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229]) 
+])
+
+
 target_transform_cityscapes = Compose([
     Resize((512, 1024), Image.NEAREST),
     MapToTrainIds(),
@@ -234,13 +253,6 @@ def main(args):
             
             mask_logits = mask_logits_list[-1]
             class_logits = class_logits_list[-1]
-
-
-            # Inserisci questo dentro il loop di validazione, appena dopo l'estrazione dei logits:
-            print("SHAPE CLASS LOGITS:", class_logits.shape)
-            print("SHAPE MASK LOGITS:", mask_logits.shape)
-            import sys; sys.exit() # Ferma lo script subito per controllare
-
 
             # 2. Trasformo in probabilità
             mask_probs = torch.sigmoid(mask_logits)
