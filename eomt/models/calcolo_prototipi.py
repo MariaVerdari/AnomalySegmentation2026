@@ -30,10 +30,9 @@ torch.backends.cudnn.benchmark = True
 
 
 input_transform = Compose([
-    Resize((512, 1024), Image.BILINEAR),
+    Resize((1024, 1024), Image.BILINEAR),
     ToTensor()
 ])
-
 
 def load_my_state_dict(model, state_dict):  
     own_state = model.state_dict()
@@ -65,22 +64,17 @@ def load_my_state_dict(model, state_dict):
 
 
 def main():
+    parser = ArgumentParser()
+    parser.add_argument('--datadir', default="/content/cityscapes_local/")
+    parser.add_argument('--loadDir', default="/content/drive/MyDrive/Validation_Dataset/") 
+    parser.add_argument('--loadWeights', default="eomt_cityscapes.bin")
+    parser.add_argument('--prototypes_file', default="cityscapes_prototypes.pt")
+    parser.add_argument('--cpu', action='store_true')
+    args = parser.parse_args()
 
-    class Config:
-        input_path = "/content/cityscapes_local/*.png"    #cambiare estensione??? 
-        loadDir = "/content/drive/MyDrive/trained_models/" 
-        loadWeights = "eomt_pretrained.pth"
-        cpu = False # Metti True solo se vuoi disattivare la GPU
-
-    args = Config()
-
-    
-    weightspath = args.loadDir + args.loadWeights
-
-    print ("Loading weights: " + weightspath)
-
-
-    encoder = ViT(img_size=(512, 1024), patch_size=16, backbone_name="vit_base_patch14_reg4_dinov2")
+    weightspath = os.path.join(args.loadDir, args.loadWeights)
+    print("Caricamento pesi modello da:", weightspath)
+    encoder = ViT(img_size=(1024, 1024), patch_size=16, backbone_name="vit_base_patch14_reg4_dinov2")
     model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3) 
     model = load_my_state_dict(model, torch.load(weightspath, map_location='cpu'))
     print ("Model and weights LOADED successfully")
@@ -93,8 +87,18 @@ def main():
 
     ##### ESTRAZIONE DELLE QUERIES ####
     vettori_per_classe = {i: [] for i in range(NUM_CLASSES)} #dizionario di liste
-    image_paths = glob.glob(os.path.expanduser(str(args.input_path[0])))
+    search_pattern = os.path.join(args.datadir, "leftImg8bit", "*", "*", "*.png")
+    image_paths = glob.glob(search_pattern)
+    # Se la cartella è piatta o strutturata diversamente, usiamo un piano B di ricerca ricorsiva
+    if len(image_paths) == 0:
+        search_pattern_flat = os.path.join(args.datadir, "**", "*.png")
+        image_paths = glob.glob(search_pattern_flat, recursive=True)
 
+    if len(image_paths) == 0:
+        print(f"ERRORE: Nessuna immagine .png trovata nel percorso: {args.datadir}")
+        return
+    else:
+        print(f"Trovate {len(image_paths)} immagini da analizzare per i prototipi.")
 
     with torch.no_grad():
         for path in image_paths:
@@ -169,13 +173,10 @@ def main():
             print(f"ATTENZIONE: Nessun vettore valido trovato per la Classe {cls_id}.")
 
 
-
-    output_file = "cityscapes_prototypes.pt" #salva in un file nuovo 
     torch.save({
         "prototipi": prototipi,
         "covarianze": covarianze
-    }, output_file)
-    print(f"\nStatistiche salvate in: {output_file}")
-
+    }, args.prototypes_file)
+    print(f"\nStatistiche salvate con successo in: {args.prototypes_file}")
 if __name__ == '__main__':
     main()
