@@ -266,7 +266,32 @@ def main(args):
                  
     # Carica i pesi originali dal file
     state_dict = torch.load(weightspath, map_location="cpu", weights_only=True)
-    
+
+
+
+
+
+
+    # 1. Trova il pos_embed per ricavare risoluzione e patch_size
+    for k, v in state_dict.items():
+        if "pos_embed" in k:
+            print(f"CHIAVE: {k}")
+            print(f"  Shape: {v.shape}  → [1, num_tokens, embed_dim]")
+
+    # 2. Trova il patch embedding per ricavare patch_size e canali input
+    for k, v in state_dict.items():
+        if "patch_embed" in k or "proj.weight" in k:
+            print(f"CHIAVE: {k}")
+            print(f"  Shape: {v.shape}  → [embed_dim, canali_input, patch_h, patch_w]")
+
+    # 3. Stampa tutte le chiavi per avere il quadro completo
+    print("\n--- TUTTE LE CHIAVI ---")
+    for k, v in state_dict.items():
+        print(f"{k}: {v.shape}")
+        
+
+
+        
     # Applica la nostra funzione di pulizia e interpolazione
     model = load_my_state_dict(model, state_dict)
     print("Model and weights LOADED successfully")
