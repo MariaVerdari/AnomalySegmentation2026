@@ -11,7 +11,6 @@ from PIL import Image
 from argparse import ArgumentParser
 from torchvision.transforms import Compose, Resize, ToTensor
 import torch.nn.functional as F
-from tqdm import tqdm
 
 
 from eomt_estensione import EoMT_estensione #modello che estrae le queries
@@ -21,7 +20,7 @@ from vit import ViT
 
 SEED = 42
 NUM_CLASSES = 19
-CONFIDENCE_THRESHOLD = 0.7  # Ignoriamo le query con probabilità inferiore all'80%
+CONFIDENCE_THRESHOLD = 0.7  # Ignoriamo le query con probabilità inferiore al 70%
 
 random.seed(SEED)
 np.random.seed(SEED)
@@ -94,11 +93,11 @@ def main():
 
     ##### ESTRAZIONE DELLE QUERIES ####
     vettori_per_classe = {i: [] for i in range(NUM_CLASSES)} #dizionario di liste
-    image_paths = glob.glob(os.path.expanduser(str(args.input[0])))
+    image_paths = glob.glob(os.path.expanduser(str(args.input_path[0])))
 
 
     with torch.no_grad():
-        for path in tqdm(image_paths, desc="Elaborazione Immagini"):
+        for path in image_paths:
             images = input_transform(Image.open(path).convert('RGB')).unsqueeze(0).float()
             if not args.cpu:
                 images = images.cuda()

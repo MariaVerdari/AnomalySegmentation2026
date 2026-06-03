@@ -21,7 +21,7 @@ from scale_block import ScaleBlock
 
 
 
-class EoMT(nn.Module):
+class EoMT_estensione(nn.Module):
     def __init__(
         self,
         encoder: nn.Module,
