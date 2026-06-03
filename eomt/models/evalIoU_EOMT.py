@@ -74,14 +74,19 @@ input_transform_cityscapes = Compose([
 
 from torchvision import transforms
 
+
+
+
 input_transform_cityscapes = transforms.Compose([
-    transforms.Resize((1024, 1024)), # Forza il formato quadrato nativo del Transformer
+    transforms.Resize((896, 896)), # Risoluzione nativa esatta del checkpoint (64 patch * 14 pxl)
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # ImageNet RGB standard
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
 ])
 
+
+
 target_transform_cityscapes = Compose([
-    Resize((512, 1024), Image.NEAREST),
+    #Resize((512, 1024), Image.NEAREST),
     MapToTrainIds(),
     ToLabel(),
     Relabel(255, 19),   # Mappa il void standard di Cityscapes (255) a 19
@@ -95,12 +100,25 @@ def main(args):
     print ("Loading model: " + modelpath)
     print ("Loading weights: " + weightspath)
 
+
+    '''
     # 1. COSTRUISCO L'ENCODER E IL MODELLO EOMT
     print("Inizializzazione del modello EoMT...")
     encoder = ViT(
         #img_size=(512, 1024),
         img_size=(1024, 1024),  
         patch_size=16,
+        backbone_name="vit_base_patch14_reg4_dinov2"
+    )
+
+    '''
+
+
+    # 1. COSTRUISCO L'ENCODER E IL MODELLO EOMT
+    print("Inizializzazione del modello EoMT...")
+    encoder = ViT(
+        img_size=(896, 896),  # Allineato perfettamente alle 4096 patch
+        patch_size=14,        # Patch size nativa di vit_base_patch14
         backbone_name="vit_base_patch14_reg4_dinov2"
     )
     
@@ -266,6 +284,8 @@ def main(args):
             align_corners=False
             )
 
+
+           
             # 5. Argmax finale
             predicted_classes = result_probs.argmax(dim=1)
 
