@@ -76,29 +76,21 @@ from torchvision import transforms
 
 
 # 1. Nel transform di input
+
 input_transform_cityscapes = Compose([
-    Resize((1024, 2048)), # Cambialo in 1024x2048: è la risoluzione nativa di Cityscapes!
+    Resize((1024, 1024)),    # ← quadrato
     ToTensor(),
-    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
+    #Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
 
-
-'''
-
-input_transform_cityscapes = transforms.Compose([
-    transforms.Resize((896, 896)), # Risoluzione nativa esatta del checkpoint (64 patch * 14 pxl)
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
-])
-'''
 
 
 target_transform_cityscapes = Compose([
-    #Resize((512, 1024), Image.NEAREST),
+    Resize((1024, 1024), interpolation=Image.NEAREST),  # ← stessa risoluzione, NEAREST obbligatorio per le label
     MapToTrainIds(),
     ToLabel(),
-    Relabel(255, 19),   # Mappa il void standard di Cityscapes (255) a 19
+    Relabel(255, 19),
 ])
 
 
@@ -127,10 +119,13 @@ def main(args):
     # 1. COSTRUISCO L'ENCODER E IL MODELLO EOMT
     print("Inizializzazione del modello EoMT...")
     
+   
+
+
     encoder = ViT(
-    img_size=(1024, 2048), # Usa la risoluzione piena
-    patch_size=16,         # Coerente con i tuoi pesi .bin
-    backbone_name="vit_base_patch14_reg4_dinov2" 
+    img_size=(1024, 1024),   # ← quadrato, 64x64 patch
+    patch_size=16,
+    backbone_name="vit_base_patch14_reg4_dinov2"
     )
 
     
@@ -177,87 +172,24 @@ def main(args):
 
     #NUOVA VERSIONE CON NOMI GIUSTI 
     def load_my_state_dict(model, state_dict):  
-            own_state = model.state_dict()
-            for name, param in state_dict.items(): 
+        own_state = model.state_dict()
+        for name, param in state_dict.items(): 
+            clean_name = name
+            if clean_name.startswith("network."):
+                clean_name = clean_name[len("network."):]
+            if clean_name.startswith("module."):
+                clean_name = clean_name[len("module."):]
                 
-                # 1. Puliamo il nome della chiave dai prefissi extra
+            if clean_name not in own_state:
+                print(f"{name} non caricato")
+                continue
 
+            if own_state[clean_name].shape == param.shape:
+                own_state[clean_name].copy_(param)
+            else:
+                print(f"❌ Shape mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
                 
-                # 1. Puliamo il nome della chiave usando lo slicing sicuro
-                clean_name = name
-                if clean_name.startswith("network."):
-                    clean_name = clean_name[len("network."):]
-                if clean_name.startswith("module."):
-                    clean_name = clean_name[len("module."):]
-                    
-                # 2. Controlliamo se la chiave pulita esiste nel modello
-                if clean_name not in own_state:
-                    print(name, " non caricato (chiave pulita cercata:", clean_name, ")")
-                    continue
-                else:
-                    # 3. Se le dimensioni combaciano, copia i pesi
-                    if own_state[clean_name].shape == param.shape:
-                        own_state[clean_name].copy_(param)
-
-
-                                # --- SEZIONE INTERPOLAZIONE POS_EMBED ---
-                    elif "pos_embed" in clean_name:
-                        # 1. Trova automaticamente il numero di token extra
-                        total_tokens = param.shape[1]
-                        num_extra_tokens = 0
-                        patch_side = 0
-                        
-                        # Cerchiamo un numero di "extra tokens" (0-10) che lasci un numero di patch quadrato
-                        for extra in range(0, 10):
-                            num_patches = total_tokens - extra
-                            side = int(num_patches**0.5)
-                            if side * side == num_patches:
-                                num_extra_tokens = extra
-                                patch_side = side
-                                break
-                        
-                        if patch_side == 0:
-                            print(f"❌ Impossibile determinare la griglia per {clean_name}. Shape: {param.shape}")
-                            return model
-                        
-                        print(f"✅ Auto-detect pos_embed: {num_extra_tokens} extra tokens, griglia {patch_side}x{patch_side}")
-
-                        # 2. Isola i token
-                        extra_tokens = param[:, :num_extra_tokens, :]
-                        patch_embed = param[:, num_extra_tokens:, :] 
-                        
-                        # 3. Trasformazione
-                        dim = patch_embed.shape[-1]
-                        # Reshape basato sul patch_side trovato
-                        patch_embed_2d = patch_embed.reshape(1, patch_side, patch_side, dim).permute(0, 3, 1, 2)
-                        
-                        # 4. Interpolazione per la nuova risoluzione (1024x2048)
-                        new_h = 1024 // 16 # 64
-                        new_w = 2048 // 16 # 128
-                        
-                        patch_embed_interp = F.interpolate(
-                            patch_embed_2d, 
-                            size=(new_h, new_w), 
-                            mode='bilinear', 
-                            align_corners=False
-                        )
-                        
-                        # 5. Riassemblaggio
-                        patch_embed_final = patch_embed_interp.permute(0, 2, 3, 1).reshape(1, -1, dim)
-                        pos_embed_final = torch.cat([extra_tokens, patch_embed_final], dim=1)
-                        
-                        # 6. Copia nel modello
-                        if pos_embed_final.shape == own_state[clean_name].shape:
-                            own_state[clean_name].copy_(pos_embed_final)
-                            print(f"✅ Interpolazione completata: {pos_embed_final.shape}")
-                        else:
-                            print(f"❌ Errore shape finale: atteso {own_state[clean_name].shape}, ottenuto {pos_embed_final.shape}")
-                     
-                    else:
-                        print(f"Dimension mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
-                        
-            return model
-
+        return model
 
       
     # 2. CARICO I PESI PRIMA SUL MODELLO GREGGIO
@@ -294,6 +226,18 @@ def main(args):
         
     # Applica la nostra funzione di pulizia e interpolazione
     model = load_my_state_dict(model, state_dict)
+
+
+    # Verifica normalizzazione interna
+    if hasattr(model, 'module'):  # DataParallel wrapper
+        enc = model.module.encoder
+    else:
+        enc = model.encoder
+    print("pixel_mean:", enc.pixel_mean.flatten())
+    print("pixel_std: ", enc.pixel_std.flatten())
+
+
+
     print("Model and weights LOADED successfully")
 
     # 3. SOLO ADESSO PARALLELIZZI E MANDI IN GPU
@@ -352,8 +296,6 @@ def main(args):
 
 
            
-            # 5. Argmax finale
-            predicted_classes = result_probs.argmax(dim=1)
 
             '''
             result_probs = F.interpolate(result_probs, size=(512, 1024), mode="bilinear", align_corners=False)
