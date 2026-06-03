@@ -235,6 +235,13 @@ def main(args):
             mask_logits = mask_logits_list[-1]
             class_logits = class_logits_list[-1]
 
+
+            # Inserisci questo dentro il loop di validazione, appena dopo l'estrazione dei logits:
+            print("SHAPE CLASS LOGITS:", class_logits.shape)
+            print("SHAPE MASK LOGITS:", mask_logits.shape)
+            import sys; sys.exit() # Ferma lo script subito per controllare
+
+
             # 2. Trasformo in probabilità
             mask_probs = torch.sigmoid(mask_logits)
             class_probs = torch.softmax(class_logits, dim=-1)[:, :, :-1] # Tolgo il Void delle queries
