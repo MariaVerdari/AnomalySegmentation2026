@@ -75,14 +75,23 @@ input_transform_cityscapes = Compose([
 from torchvision import transforms
 
 
+# 1. Nel transform di input
+input_transform_cityscapes = Compose([
+    Resize((1024, 2048)), # Cambialo in 1024x2048: è la risoluzione nativa di Cityscapes!
+    ToTensor(),
+    Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
+])
 
+
+
+'''
 
 input_transform_cityscapes = transforms.Compose([
     transforms.Resize((896, 896)), # Risoluzione nativa esatta del checkpoint (64 patch * 14 pxl)
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) 
 ])
-
+'''
 
 
 target_transform_cityscapes = Compose([
@@ -91,6 +100,7 @@ target_transform_cityscapes = Compose([
     ToLabel(),
     Relabel(255, 19),   # Mappa il void standard di Cityscapes (255) a 19
 ])
+
 
 def main(args):
 
@@ -116,11 +126,13 @@ def main(args):
 
     # 1. COSTRUISCO L'ENCODER E IL MODELLO EOMT
     print("Inizializzazione del modello EoMT...")
+    
     encoder = ViT(
-        img_size=(896, 896),  # Allineato perfettamente alle 4096 patch
-        patch_size=14,        # Patch size nativa di vit_base_patch14
-        backbone_name="vit_base_patch14_reg4_dinov2"
+    img_size=(1024, 2048), # Usa la risoluzione piena
+    patch_size=16,         # Coerente con i tuoi pesi .bin
+    backbone_name="vit_base_patch14_reg4_dinov2" 
     )
+
     
     model = EoMT(
         encoder=encoder,
@@ -186,32 +198,53 @@ def main(args):
                     # 3. Se le dimensioni combaciano, copia i pesi
                     if own_state[clean_name].shape == param.shape:
                         own_state[clean_name].copy_(param)
-                    
-                    # 2. SEZIONE NUOVA: Se è il pos_embed, lo interpoliamo dinamicamente!
+
+
+                                # --- SEZIONE INTERPOLAZIONE POS_EMBED ---
                     elif "pos_embed" in clean_name:
+                        # param è il tensore salvato nel file (es. [1, 4097, 768])
+                        # own_state[clean_name] è quello del modello istanziato (es. [1, 8193, 768])
                         
-                        # I pesi sono [1, 4096, 768] (griglia 64x64). Vogliamo [1, 2048, 768] (griglia 32x64).
-                        dim = param.shape[-1]
+                        # 1. Gestione CLS token (solitamente il primo elemento)
+                        cls_token = param[:, :1, :]
+                        patch_embed = param[:, 1:, :] # Escludiamo il CLS
                         
-                        # Calcoliamo la griglia originale (radice quadrata di 4096 = 64)
-                        orig_size = int(param.shape[1] ** 0.5) 
+                        # 2. Calcolo dimensioni
+                        # orig_side = radice quadrata del numero di patch originali
+                        num_patches_orig = patch_embed.shape[1]
+                        orig_side = int(num_patches_orig ** 0.5)
                         
-                        # Sappiamo che le nostre immagini sono 512x1024 e patch è 16
-                        H_new = 512 // 16  # 32
-                        W_new = 1024 // 16 # 64
+                        # Dimensioni attuali richieste dal modello (basate su 1024x2048)
+                        new_h = 1024 // 16 # 64
+                        new_w = 2048 // 16 # 128
                         
-                        # Trasformiamo la sequenza 1D in un'immagine 2D per poterla ridimensionare
-                        param_reshaped = param.reshape(1, orig_size, orig_size, dim).permute(0, 3, 1, 2)
+                        # 3. Trasformazione per interpolazione [1, N, C] -> [1, C, H, W]
+                        # Assumiamo che la griglia originale fosse quadrata
+                        dim = patch_embed.shape[-1]
+                        patch_embed_2d = patch_embed.reshape(1, orig_side, orig_side, dim).permute(0, 3, 1, 2)
                         
-                        # Ridimensioniamo (interpolazione bilineare)
-                        param_interpolated = F.interpolate(param_reshaped, size=(H_new, W_new), mode='bilinear', align_corners=False)
+                        # 4. Interpolazione bilineare
+                        patch_embed_interp = F.interpolate(
+                            patch_embed_2d, 
+                            size=(new_h, new_w), 
+                            mode='bilinear', 
+                            align_corners=False
+                        )
                         
-                        # La riportiamo alla forma di sequenza 1D [1, 2048, 768]
-                        param_final = param_interpolated.permute(0, 2, 3, 1).reshape(1, -1, dim)
+                        # 5. Ri-appiattimento [1, C, H_new, W_new] -> [1, N_new, C]
+                        patch_embed_final = patch_embed_interp.permute(0, 2, 3, 1).reshape(1, -1, dim)
                         
-                        # Copiamo i pesi adattati nel modello
-                        own_state[clean_name].copy_(param_final)
-                        print(f"✅ pos_embed interpolato con successo da 4096 a 2048!")
+                        # 6. Ri-concatenazione con il CLS token e copia
+                        pos_embed_final = torch.cat([cls_token, patch_embed_final], dim=1)
+                        
+                        # Verifica che le dimensioni corrispondano a quelle del modello caricato
+                        if pos_embed_final.shape == own_state[clean_name].shape:
+                            own_state[clean_name].copy_(pos_embed_final)
+                            print(f"✅ pos_embed interpolato: {param.shape} -> {pos_embed_final.shape}")
+                        else:
+                            print(f"❌ Errore interpolazione pos_embed: atteso {own_state[clean_name].shape}, ottenuto {pos_embed_final.shape}")
+
+
                     else:
                         print(f"Dimension mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
                         
