@@ -75,14 +75,10 @@ input_transform_cityscapes = Compose([
 from torchvision import transforms
 
 input_transform_cityscapes = transforms.Compose([
-    transforms.Resize((512, 1024)),
+    transforms.Resize((1024, 1024)), # Forza il formato quadrato nativo del Transformer
     transforms.ToTensor(),
-    # Inverte i canali da RGB a BGR lungo la dimensione del colore
-    transforms.Lambda(lambda x: x[[2, 1, 0], :, :]), 
-    # Normalizzazione con medie e std per l'ordine BGR (ImageNet invertito)
-    transforms.Normalize(mean=[0.406, 0.456, 0.485], std=[0.225, 0.224, 0.229]) 
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # ImageNet RGB standard
 ])
-
 
 target_transform_cityscapes = Compose([
     Resize((512, 1024), Image.NEAREST),
@@ -102,7 +98,8 @@ def main(args):
     # 1. COSTRUISCO L'ENCODER E IL MODELLO EOMT
     print("Inizializzazione del modello EoMT...")
     encoder = ViT(
-        img_size=(512, 1024),
+        #img_size=(512, 1024),
+        img_size=(1024, 1024),  
         patch_size=16,
         backbone_name="vit_base_patch14_reg4_dinov2"
     )
@@ -260,21 +257,48 @@ def main(args):
 
             # 3. Ricostruisco la mappa di segmentazione classica
             result_probs = torch.einsum("bqc, bqhw -> bchw", class_probs, mask_probs)
+
+
+            result_probs = torch.nn.functional.interpolate(
+            result_probs, 
+            size= labels.shape[-2:], # Estrae altezza e larghezza reali dal tensore del Ground Truth
+            mode="bilinear", 
+            align_corners=False
+            )
+
+            # 5. Argmax finale
+            predicted_classes = result_probs.argmax(dim=1)
+
+            '''
             result_probs = F.interpolate(result_probs, size=(512, 1024), mode="bilinear", align_corners=False)
             
+
+
             # 4. Trovo la classe vincente per ogni pixel!
             # .max(1)[1] significa: guarda l'asse delle classi (1) e prendi l'indice [1] del valore massimo
-            predicted_classes = result_probs.max(1)[1].unsqueeze(1).data
-            
-            #temperature sclaing
-            temperature = [0.5,0.75,1.1]
-            scaled_result = result_probs / temperature[0]
-            predicted_classes_05 = scaled_result.max(1)[1].unsqueeze(1).data
-            scaled_result = result_probs / temperature[1]
-            predicted_classes_075 = scaled_result.max(1)[1].unsqueeze(1).data
-            scaled_result = result_probs / temperature[2]
-            predicted_classes_11 = scaled_result.max(1)[1].unsqueeze(1).data 
 
+            
+            predicted_classes = result_probs.max(1)[1].unsqueeze(1).data
+
+            '''
+            # 5. Argmax finale (Aggiunto .unsqueeze(1) per evitare il crash)
+            predicted_classes = result_probs.argmax(dim=1).unsqueeze(1).data
+
+
+
+            #temperature sclaing
+
+            temperature = [0.5, 0.75, 1.1]
+            
+            scaled_result = result_probs / temperature[0]
+            predicted_classes_05 = scaled_result.argmax(dim=1).unsqueeze(1).data
+            
+            scaled_result = result_probs / temperature[1]
+            predicted_classes_075 = scaled_result.argmax(dim=1).unsqueeze(1).data
+            
+            scaled_result = result_probs / temperature[2]
+            predicted_classes_11 = scaled_result.argmax(dim=1).unsqueeze(1).data
+            
 
         # --- 3. MASCHERAMENTO DEI PIXEL VOID (Previene falsi positivi) ---
         ignore_mask = (labels == 19)
