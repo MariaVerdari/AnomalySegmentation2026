@@ -322,7 +322,7 @@ def main(args):
     print("Took ", time.time()-start, "seconds")
     print("=======================================")
     #print("TOTAL IOU: ", iou * 100, "%")
-    '''
+    
     print("Per-Class IoU:")
     print(iou_classes_str[0], "Road")
     print(iou_classes_str[1], "sidewalk")
@@ -344,7 +344,7 @@ def main(args):
     print(iou_classes_str[17], "motorcycle")
     print(iou_classes_str[18], "bicycle")
     print("=======================================")
-    '''
+    
     # calcolo la miou
     iouStr = getColorEntry(iouVal)+'{:0.2f}'.format(iouVal*100) + '\033[0m'
     print ("MEAN IoU: ", iouStr, "%")
