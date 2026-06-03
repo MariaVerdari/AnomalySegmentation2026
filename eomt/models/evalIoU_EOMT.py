@@ -202,28 +202,39 @@ def main(args):
 
                                 # --- SEZIONE INTERPOLAZIONE POS_EMBED ---
                     elif "pos_embed" in clean_name:
-                        # param è il tensore salvato nel file (es. [1, 4097, 768])
-                        # own_state[clean_name] è quello del modello istanziato (es. [1, 8193, 768])
+                        # 1. Trova automaticamente il numero di token extra
+                        total_tokens = param.shape[1]
+                        num_extra_tokens = 0
+                        patch_side = 0
                         
-                        # 1. Gestione CLS token (solitamente il primo elemento)
-                        cls_token = param[:, :1, :]
-                        patch_embed = param[:, 1:, :] # Escludiamo il CLS
+                        # Cerchiamo un numero di "extra tokens" (0-10) che lasci un numero di patch quadrato
+                        for extra in range(0, 10):
+                            num_patches = total_tokens - extra
+                            side = int(num_patches**0.5)
+                            if side * side == num_patches:
+                                num_extra_tokens = extra
+                                patch_side = side
+                                break
                         
-                        # 2. Calcolo dimensioni
-                        # orig_side = radice quadrata del numero di patch originali
-                        num_patches_orig = patch_embed.shape[1]
-                        orig_side = int(num_patches_orig ** 0.5)
+                        if patch_side == 0:
+                            print(f"❌ Impossibile determinare la griglia per {clean_name}. Shape: {param.shape}")
+                            return model
                         
-                        # Dimensioni attuali richieste dal modello (basate su 1024x2048)
+                        print(f"✅ Auto-detect pos_embed: {num_extra_tokens} extra tokens, griglia {patch_side}x{patch_side}")
+
+                        # 2. Isola i token
+                        extra_tokens = param[:, :num_extra_tokens, :]
+                        patch_embed = param[:, num_extra_tokens:, :] 
+                        
+                        # 3. Trasformazione
+                        dim = patch_embed.shape[-1]
+                        # Reshape basato sul patch_side trovato
+                        patch_embed_2d = patch_embed.reshape(1, patch_side, patch_side, dim).permute(0, 3, 1, 2)
+                        
+                        # 4. Interpolazione per la nuova risoluzione (1024x2048)
                         new_h = 1024 // 16 # 64
                         new_w = 2048 // 16 # 128
                         
-                        # 3. Trasformazione per interpolazione [1, N, C] -> [1, C, H, W]
-                        # Assumiamo che la griglia originale fosse quadrata
-                        dim = patch_embed.shape[-1]
-                        patch_embed_2d = patch_embed.reshape(1, orig_side, orig_side, dim).permute(0, 3, 1, 2)
-                        
-                        # 4. Interpolazione bilineare
                         patch_embed_interp = F.interpolate(
                             patch_embed_2d, 
                             size=(new_h, new_w), 
@@ -231,20 +242,17 @@ def main(args):
                             align_corners=False
                         )
                         
-                        # 5. Ri-appiattimento [1, C, H_new, W_new] -> [1, N_new, C]
+                        # 5. Riassemblaggio
                         patch_embed_final = patch_embed_interp.permute(0, 2, 3, 1).reshape(1, -1, dim)
+                        pos_embed_final = torch.cat([extra_tokens, patch_embed_final], dim=1)
                         
-                        # 6. Ri-concatenazione con il CLS token e copia
-                        pos_embed_final = torch.cat([cls_token, patch_embed_final], dim=1)
-                        
-                        # Verifica che le dimensioni corrispondano a quelle del modello caricato
+                        # 6. Copia nel modello
                         if pos_embed_final.shape == own_state[clean_name].shape:
                             own_state[clean_name].copy_(pos_embed_final)
-                            print(f"✅ pos_embed interpolato: {param.shape} -> {pos_embed_final.shape}")
+                            print(f"✅ Interpolazione completata: {pos_embed_final.shape}")
                         else:
-                            print(f"❌ Errore interpolazione pos_embed: atteso {own_state[clean_name].shape}, ottenuto {pos_embed_final.shape}")
-
-
+                            print(f"❌ Errore shape finale: atteso {own_state[clean_name].shape}, ottenuto {pos_embed_final.shape}")
+                     
                     else:
                         print(f"Dimension mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
                         
