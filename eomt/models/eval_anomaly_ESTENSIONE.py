@@ -28,13 +28,39 @@ torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
+'''
 input_transform = Compose([
     Resize((512, 1024), Image.BILINEAR),
     ToTensor()
 ])
+
+
+
+input_transform = Compose([
+    Resize((1024, 1024), Image.BILINEAR),
+    ToTensor()
+])
+
 target_transform = Compose([
     Resize((512, 1024), Image.NEAREST),
 ])
+
+'''
+
+input_transform = Compose(
+    [
+        Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
+        ToTensor() # trasforma in tenosore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
+        #Normalize([.485, .456, .406], [.229, .224, .225]), # normalizzazione per non so quale dataset
+    ]
+)
+
+target_transform = Compose( #trasforamzioni per l'etichetta
+    [
+        Resize((512, 1024), Image.NEAREST),
+    ]
+)
+
 
 def load_my_state_dict(model, state_dict):  
     own_state = model.state_dict()
