@@ -9,6 +9,8 @@ import numpy as np
 from PIL import Image
 import torch.nn.functional as F
 from torchvision.transforms import Compose, Resize, ToTensor
+import argparse 
+
 
 from sklearn.metrics import average_precision_score
 from ood_metrics import fpr_at_95_tpr 
@@ -54,14 +56,16 @@ def load_my_state_dict(model, state_dict):
     return model
 
 def main():
-    class Config:
-        input_images = "/content/RoadObstacle21/images/*.webp" 
-        loadDir = "/content/drive/MyDrive/trained_models/" 
-        loadWeights = "eomt_pretrained.pth"
-        prototypes_file = "cityscapes_prototypes.pt" # file con i prototipi generato in calcolo_prototipi
-        cpu = False 
 
-    args = Config()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', type=str, required=True)
+    parser.add_argument('--loadDir', type=str, required=True)
+    parser.add_argument('--loadWeights', type=str, required=True)
+    parser.add_argument('--prototypes_file', type=str, required=True)
+    parser.add_argument('--cpu', action='store_true')
+    
+    args = parser.parse_args()
+
 
     weightspath = os.path.join(args.loadDir, args.loadWeights)
     print("Caricamento pesi modello da:", weightspath)
@@ -92,8 +96,7 @@ def main():
     ood_gts_list = []  # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
     anomaly_score_mahalanobis_list = [] # lista con score di anomalie 
 
-    image_paths = glob.glob(os.path.expanduser(args.input_images))
-
+    image_paths = glob.glob(os.path.expanduser(args.input))
 
 
     #### CICLO sulle immagini ####
