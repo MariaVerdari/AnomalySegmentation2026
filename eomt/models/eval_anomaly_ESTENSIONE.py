@@ -106,9 +106,9 @@ def main():
 
             # Estrazione feature dal modello
             if isinstance(model, torch.nn.DataParallel):  
-                updated_queries, mask_logits_list, class_logits_list = model.module(images, extract_queries=True)
+                updated_queries, mask_logits_list, class_logits_list = model.module(images)
             else:
-                updated_queries, mask_logits_list, class_logits_list = model(images, extract_queries=True)
+                updated_queries, mask_logits_list, class_logits_list = model(images)
 
             mask_logits = mask_logits_list[-1]   #  [Batch, Queries, H, W]
             class_logits = class_logits_list[-1] #  [Batch, Queries, Num_Classes + 1]
