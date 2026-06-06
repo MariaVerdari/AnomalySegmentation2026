@@ -39,27 +39,15 @@ def load_my_state_dict(model, state_dict):
     for name, param in state_dict.items(): 
         clean_name = name
         if clean_name.startswith("network."):
-            clean_name = clean_name.replace("network.", "")
+            clean_name = clean_name[len("network."):]
         if clean_name.startswith("module."):
-            clean_name = clean_name.replace("module.", "")
-            
+            clean_name = clean_name[len("module."):]
         if clean_name not in own_state:
-            # print(name, " non caricato (chiave cercata:", clean_name, ")")
             continue
+        if own_state[clean_name].shape == param.shape:
+            own_state[clean_name].copy_(param)
         else:
-            if own_state[clean_name].shape == param.shape:
-                own_state[clean_name].copy_(param)
-            elif "pos_embed" in clean_name:
-                dim = param.shape[-1]
-                orig_size = int(param.shape[1] ** 0.5) 
-                H_new = 512 // 16  # 32
-                W_new = 1024 // 16 # 64
-                param_reshaped = param.reshape(1, orig_size, orig_size, dim).permute(0, 3, 1, 2)
-                param_interpolated = F.interpolate(param_reshaped, size=(H_new, W_new), mode='bilinear', align_corners=False)
-                param_final = param_interpolated.permute(0, 2, 3, 1).reshape(1, -1, dim)
-                own_state[clean_name].copy_(param_final)
-            else:
-                print(f"Dimension mismatch per {clean_name}")
+            print(f"❌ Shape mismatch per {clean_name}")
     return model
 
 

@@ -49,7 +49,7 @@ target_transform = Compose([
 
 input_transform = Compose(
     [
-        Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
+        Resize((1024, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
         ToTensor() # trasforma in tenosore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
         #Normalize([.485, .456, .406], [.229, .224, .225]), # normalizzazione per non so quale dataset
     ]
@@ -57,28 +57,24 @@ input_transform = Compose(
 
 target_transform = Compose( #trasforamzioni per l'etichetta
     [
-        Resize((512, 1024), Image.NEAREST),
+        Resize((1024, 1024), Image.NEAREST),
     ]
 )
-
 
 def load_my_state_dict(model, state_dict):  
     own_state = model.state_dict()
     for name, param in state_dict.items(): 
-        clean_name = name.replace("network.", "").replace("module.", "")
-            
+        clean_name = name
+        if clean_name.startswith("network."):
+            clean_name = clean_name[len("network."):]
+        if clean_name.startswith("module."):
+            clean_name = clean_name[len("module."):]
         if clean_name not in own_state:
             continue
         if own_state[clean_name].shape == param.shape:
             own_state[clean_name].copy_(param)
-        elif "pos_embed" in clean_name:
-            dim = param.shape[-1]
-            orig_size = int(param.shape[1] ** 0.5) 
-            H_new, W_new = 512 // 16, 1024 // 16
-            param_reshaped = param.reshape(1, orig_size, orig_size, dim).permute(0, 3, 1, 2)
-            param_interpolated = F.interpolate(param_reshaped, size=(H_new, W_new), mode='bilinear', align_corners=False)
-            param_final = param_interpolated.permute(0, 2, 3, 1).reshape(1, -1, dim)
-            own_state[clean_name].copy_(param_final)
+        else:
+            print(f"❌ Shape mismatch per {clean_name}")
     return model
 
 def main():
@@ -96,7 +92,7 @@ def main():
     weightspath = os.path.join(args.loadDir, args.loadWeights)
     print("Caricamento pesi modello da:", weightspath)
 
-    encoder = ViT(img_size=(512, 1024), patch_size=16, backbone_name="vit_base_patch14_reg4_dinov2")
+    encoder = ViT(img_size=(1024, 1024), patch_size=16, backbone_name="vit_base_patch14_reg4_dinov2")
     model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3) 
     model = load_my_state_dict(model, torch.load(weightspath, map_location='cpu'))
     
@@ -152,6 +148,8 @@ def main():
             for i in range(100):
                 c = pred_classes[i].item() #classe predetta per quella query
                 q_vec = updated_queries[i] #la query in questione
+
+                
 
                 #calcolo tutte le distanze e prendo come punteggio la distamza minima
                 min_dist = float('inf')
@@ -210,7 +208,7 @@ def main():
             
             # Upsampling alla risoluzione originale
             anomaly_map = anomaly_map.unsqueeze(0).unsqueeze(0)
-            anomaly_map = F.interpolate(anomaly_map, size=(512, 1024), mode="bilinear", align_corners=False)
+            anomaly_map = F.interpolate(anomaly_map, size=(1024, 1024), mode="bilinear", align_corners=False)
             anomaly_result = anomaly_map.squeeze().cpu().numpy() # [512, 1024] in formato numpy
 
 
