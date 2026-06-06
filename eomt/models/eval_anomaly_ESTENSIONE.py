@@ -152,8 +152,22 @@ def main():
             for i in range(100):
                 c = pred_classes[i].item() #classe predetta per quella query
                 q_vec = updated_queries[i] #la query in questione
-                
+
+                #calcolo tutte le distanze e prendo come punteggio la distamza minima
+                min_dist = float('inf')
+                for cls_id in range(NUM_CLASSES):
+                    delta = q_vec - prototipi[cls_id]
+                    d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
+                    if d_sq < min_dist:
+                        min_dist = d_sq
+                query_distances[i] = torch.sqrt(torch.clamp(min_dist, min=0))
+            
+
+
+                '''
                 if c < NUM_CLASSES: # se la classe della query non è void
+
+                    
 
                     # calcolo distanza verso la CLASSE PREDETTA
                     delta = q_vec - prototipi[c] # sottrazione tra la query e la media della classe
@@ -170,16 +184,28 @@ def main():
                         if d_sq < min_dist:
                             min_dist = d_sq
                     query_distances[i] = torch.sqrt(torch.clamp(min_dist, min=0)) #dist minima
-
+                '''
 
             #### DALLE QUERY ALLA MAPPA PIXEL (BROADCAST) ####
 
+
+            '''
             # Moltiplichiamo ogni mask_probs [Queries, H, W] per il suo punteggio di anomalia
             query_distances_view = query_distances.view(100, 1, 1) #aggiungo dimensioni
             weighted_masks = mask_probs * query_distances_view # broadcast di distanza per ogni pixel [Queries, H_patch, W_patch] nei singoli patch
             
             # Per ogni pixel vince la query con l'anomalia più alta 
             anomaly_map, _ = torch.max(weighted_masks, dim=0) # [H_pacth, W_patch]
+
+            '''
+
+            # per ogni pixel l'indice della query con la probabilità di maschera più alta
+            _, winning_query_indices = torch.max(mask_probs, dim=0) # [H_patch, W_patch]
+
+            # Assegna a ogni pixel la distanza della sua query vincente
+            anomaly_map = query_distances[winning_query_indices] #[H_patch, W_patch]
+
+
             
             # Upsampling alla risoluzione originale
             anomaly_map = anomaly_map.unsqueeze(0).unsqueeze(0)
