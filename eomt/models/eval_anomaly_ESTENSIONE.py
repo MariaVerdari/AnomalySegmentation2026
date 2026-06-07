@@ -155,8 +155,8 @@ def main():
                 min_dist = float('inf')
                 for cls_id in range(NUM_CLASSES):
                     delta = q_vec - prototipi[cls_id]
-                    #d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
-                    d_sq = torch.dot(delta, delta) # DISTANZA EUCLIDEA
+                    d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
+                    #d_sq = torch.dot(delta, delta) # DISTANZA EUCLIDEA
                     if d_sq < min_dist:
                         min_dist = d_sq
                 query_distances[i] = torch.sqrt(torch.clamp(min_dist, min=0))
