@@ -26,7 +26,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = False
 
 
 input_transform = Compose([
@@ -47,7 +47,7 @@ def load_my_state_dict(model, state_dict):
         if own_state[clean_name].shape == param.shape:
             own_state[clean_name].copy_(param)
         else:
-            print(f"❌ Shape mismatch per {clean_name}")
+            print(f"Shape mismatch per {clean_name}")
     return model
 
 
@@ -66,6 +66,12 @@ def main():
     model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3) 
     model = load_my_state_dict(model, torch.load(weightspath, map_location='cpu'))
     print ("Model and weights LOADED successfully")
+
+
+    # Verifica num_prefix_tokens
+    print("num_prefix_tokens:", model.encoder.backbone.num_prefix_tokens)
+    print("cls_token shape:", model.encoder.backbone.cls_token.shape)
+    print("reg_token shape:", model.encoder.backbone.reg_token.shape)
 
     if not args.cpu:
         model = torch.nn.DataParallel(model).cuda() 
