@@ -57,7 +57,7 @@ def load_my_state_dict(model, state_dict):
         if own_state[clean_name].shape == param.shape:
             own_state[clean_name].copy_(param)
         else:
-            print(f"❌ Shape mismatch per {clean_name}")
+            print(f" Shape mismatch per {clean_name}")
     return model
 
 def main():
@@ -78,6 +78,12 @@ def main():
     encoder = ViT(img_size=(1024, 1024), patch_size=16, backbone_name="vit_base_patch14_reg4_dinov2")
     model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3) 
     model = load_my_state_dict(model, torch.load(weightspath, map_location='cpu'))
+
+    # Verifica num_prefix_tokens
+    print("num_prefix_tokens:", model.encoder.backbone.num_prefix_tokens)
+    print("cls_token shape:", model.encoder.backbone.cls_token.shape)
+    print("reg_token shape:", model.encoder.backbone.reg_token.shape)
+
     
     device = torch.device("cpu" if args.cpu else "cuda")
     if not args.cpu:
@@ -129,10 +135,8 @@ def main():
             query_distances = torch.zeros(100, device=device) #vettore lungo quanto in numero di query
             
             for i in range(100):
-                c = pred_classes[i].item() #classe predetta per quella query
+                #c = pred_classes[i].item() #classe predetta per quella query
                 q_vec = updated_queries[i] #la query in questione
-
-                
 
 
                     
@@ -205,7 +209,7 @@ def main():
             # Upsampling alla risoluzione originale
             anomaly_map = anomaly_map.unsqueeze(0).unsqueeze(0)
             anomaly_map = F.interpolate(anomaly_map, size=(1024, 1024), mode="bilinear", align_corners=False)
-            anomaly_result = anomaly_map.squeeze().cpu().numpy() # [512, 1024] in formato numpy
+            anomaly_result = anomaly_map.squeeze().cpu().numpy() # [1024, 1024] in formato numpy
 
 
 
