@@ -79,11 +79,6 @@ def main():
     model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3) 
     model = load_my_state_dict(model, torch.load(weightspath, map_location='cpu'))
 
-    # Verifica num_prefix_tokens
-    print("num_prefix_tokens:", model.encoder.backbone.num_prefix_tokens)
-    print("cls_token shape:", model.encoder.backbone.cls_token.shape)
-    print("reg_token shape:", model.encoder.backbone.reg_token.shape)
-
     
     device = torch.device("cpu" if args.cpu else "cuda")
     if not args.cpu:
