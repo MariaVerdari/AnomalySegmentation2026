@@ -28,24 +28,7 @@ torch.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
-'''
-input_transform = Compose([
-    Resize((512, 1024), Image.BILINEAR),
-    ToTensor()
-])
 
-
-
-input_transform = Compose([
-    Resize((1024, 1024), Image.BILINEAR),
-    ToTensor()
-])
-
-target_transform = Compose([
-    Resize((512, 1024), Image.NEAREST),
-])
-
-'''
 
 input_transform = Compose(
     [
@@ -151,15 +134,28 @@ def main():
 
                 
 
+
+                    
+
                 #calcolo tutte le distanze e prendo come punteggio la distamza minima
                 min_dist = float('inf')
                 for cls_id in range(NUM_CLASSES):
-                    delta = q_vec - prototipi[cls_id]
-                    d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
+
+                    cos_sim = F.cosine_similarity(q_vec, prototipi[cls_id], dim=0) #cosine similarity
+                    d_sq = 1.0 - cos_sim
+
+                    #MAHALNOBIS
+                    #delta = q_vec - prototipi[cls_id]
+                    #d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
+
                     #d_sq = torch.dot(delta, delta) # DISTANZA EUCLIDEA
+
                     if d_sq < min_dist:
                         min_dist = d_sq
-                query_distances[i] = torch.sqrt(torch.clamp(min_dist, min=0))
+                #query_distances[i] = torch.sqrt(torch.clamp(min_dist, min=0))
+
+                query_distances[i] = min_dist
+
             
 
 
