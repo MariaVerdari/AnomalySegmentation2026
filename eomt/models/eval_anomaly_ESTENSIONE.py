@@ -193,11 +193,24 @@ def main():
 
             '''
 
+
+
+            '''
+            # BROADCASTING CON LA QUERY CON MASK_PROB PIU ALTA PER OGNI PIXEL
+
             # per ogni pixel l'indice della query con la probabilità di maschera più alta
             _, winning_query_indices = torch.max(mask_probs, dim=0) # [H_patch, W_patch]
 
             # Assegna a ogni pixel la distanza della sua query vincente
             anomaly_map = query_distances[winning_query_indices] #[H_patch, W_patch]
+
+            '''
+
+
+            # BROADCASTING CON IL MAX PESATO
+            query_distances_view = query_distances.view(100, 1, 1)
+            weighted_masks = mask_probs * query_distances_view  # [100, 256, 256]
+            anomaly_map, _ = torch.max(weighted_masks, dim=0)   # [256, 256]
 
 
             
