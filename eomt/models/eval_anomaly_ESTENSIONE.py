@@ -85,10 +85,25 @@ def main():
         model = torch.nn.DataParallel(model).cuda() 
     model.eval() 
 
+
+
     #### CARICAMENTO PROTOTIPI E CALCOLO MATRICI INVERSE ####
 
+    
     statistiche = torch.load(args.prototypes_file, map_location=device) #leggere e caricare file con i prototipi
     prototipi = statistiche["prototipi"] #dizionario
+
+    '''
+    #PER UNICA MAT VARCOV
+    cov_globale = statistiche["cov_globale"].to(device)
+    Sigma_inv = torch.linalg.pinv(cov_globale)  # una sola inversione
+
+    for cls_id in range(NUM_CLASSES):
+        prototipi[cls_id] = prototipi[cls_id].to(device)
+
+
+    '''
+
     covarianze = statistiche["covarianze"] #dizionario
      
     matrici_inverse = {} #dizionario
@@ -98,7 +113,7 @@ def main():
         #  pinv (Pseudo-inversa) per evitare crash per matrici singolari
         matrici_inverse[cls_id] = torch.linalg.pinv(covarianze[cls_id].to(device))
         prototipi[cls_id] = prototipi[cls_id].to(device)
-
+    
     ood_gts_list = []  # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
     anomaly_score_mahalanobis_list = [] # lista con score di anomalie 
 

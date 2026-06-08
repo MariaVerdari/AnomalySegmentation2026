@@ -68,11 +68,7 @@ def main():
     print ("Model and weights LOADED successfully")
 
 
-    # Verifica num_prefix_tokens
-    print("num_prefix_tokens:", model.encoder.backbone.num_prefix_tokens)
-    print("cls_token shape:", model.encoder.backbone.cls_token.shape)
-    print("reg_token shape:", model.encoder.backbone.reg_token.shape)
-
+    
     if not args.cpu:
         model = torch.nn.DataParallel(model).cuda() 
     
@@ -140,8 +136,12 @@ def main():
     prototipi = {} #rappresentanti delle classi (vettori medi delle queries)
     covarianze = {} #matrici
 
+    tutti_i_vettori = [] # per fare unica mat cov
+
+
     for cls_id in range(NUM_CLASSES):
         if len(vettori_per_classe[cls_id]) > 0: #se c'è almeno una queries nella lista della classe
+            tutti_i_vettori.append(torch.cat(vettori_per_classe[cls_id], dim=0))
 
             # Unione di tutti i vettori della classe
             matrice_totale = torch.cat(vettori_per_classe[cls_id], dim=0) #diventa tensore bidimensionale [Queries selezionate, lunghezza queries] 
@@ -149,6 +149,8 @@ def main():
             
             # Calcolo Media (Prototipo)
             media = torch.mean(matrice_totale, dim=0) # vettore [lunghezza queries] 
+
+            '''
             
             # Calcolo Covarianza
             matrice_centrata = matrice_totale - media #  [Queries selezionate, lunghezza queries] 
@@ -159,18 +161,34 @@ def main():
 
             # Regolarizzazione per garantire l'invertibilità della matrice (aggiungo epsilon sulla diagonale)
             cov += torch.eye(768) * 0.01 
+            covarianze[cls_id] = cov #inserisco nel dizionario
+
+            '''
 
             prototipi[cls_id] = media #inserisco nel dizionario
-            covarianze[cls_id] = cov #inserisco nel dizionario
             print(f"Classe {cls_id}: Modello generato con {N} vettori")
         else:
             print(f"ATTENZIONE: Nessun vettore valido trovato per la Classe {cls_id}.")
+            
 
+
+    ##### CALCOLO COVARIANZA GLOBALE #####
+            
+    matrice_globale = torch.cat(tutti_i_vettori, dim=0)  # [N_totale, 768]
+    media_globale = matrice_globale.mean(dim=0)           # [768]
+    centrata_globale = matrice_globale - media_globale    # [N_totale, 768]
+    N_tot = matrice_globale.shape[0]
+    cov_globale = (centrata_globale.T @ centrata_globale) / (N_tot - 1)  # [768, 768]
+    cov_globale += torch.eye(768) * 0.01  # regolarizzazione
+    
+    print(f"\nCovarianza globale calcolata su {N_tot} vettori totali")
 
     torch.save({
         "prototipi": prototipi,
-        "covarianze": covarianze
+        "covarianze": covarianze,
+        "cov_globale": cov_globale   # ← aggiunta
     }, args.prototypes_file)
+
     print(f"\nStatistiche salvate con successo in: {args.prototypes_file}")
 if __name__ == '__main__':
     main()
