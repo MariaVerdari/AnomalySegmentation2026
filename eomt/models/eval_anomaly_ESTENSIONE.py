@@ -93,7 +93,8 @@ def main():
     statistiche = torch.load(args.prototypes_file, map_location=device) #leggere e caricare file con i prototipi
     prototipi = statistiche["prototipi"] #dizionario
 
-    '''
+
+    
     #PER UNICA MAT VARCOV
     cov_globale = statistiche["cov_globale"].to(device)
     Sigma_inv = torch.linalg.pinv(cov_globale)  # una sola inversione
@@ -102,17 +103,22 @@ def main():
         prototipi[cls_id] = prototipi[cls_id].to(device)
 
 
+    
     '''
-
+    # PER UNA MAT COV PER OGNI CLASSE 
     covarianze = statistiche["covarianze"] #dizionario
      
     matrici_inverse = {} #dizionario
+
+    
 
     for cls_id in range(NUM_CLASSES):
 
         #  pinv (Pseudo-inversa) per evitare crash per matrici singolari
         matrici_inverse[cls_id] = torch.linalg.pinv(covarianze[cls_id].to(device))
         prototipi[cls_id] = prototipi[cls_id].to(device)
+
+    '''
     
     ood_gts_list = []  # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
     anomaly_score_mahalanobis_list = [] # lista con score di anomalie 
@@ -155,20 +161,26 @@ def main():
                 min_dist = float('inf')
                 for cls_id in range(NUM_CLASSES):
 
-                    cos_sim = F.cosine_similarity(q_vec, prototipi[cls_id], dim=0) #cosine similarity
-                    d_sq = 1.0 - cos_sim
+                    #COSINE DIST
+                    #cos_sim = F.cosine_similarity(q_vec, prototipi[cls_id], dim=0) #cosine similarity
+                    #d_sq = 1.0 - cos_sim
 
                     #MAHALNOBIS
-                    #delta = q_vec - prototipi[cls_id]
+                    delta = q_vec - prototipi[cls_id]
                     #d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
+                    d_sq = torch.dot(delta, torch.matmul(Sigma_inv, delta))
 
-                    #d_sq = torch.dot(delta, delta) # DISTANZA EUCLIDEA
+
+
+
+                    # DISTANZA EUCLIDEA
+                    #d_sq = torch.dot(delta, delta) 
 
                     if d_sq < min_dist:
                         min_dist = d_sq
-                #query_distances[i] = torch.sqrt(torch.clamp(min_dist, min=0))
+                query_distances[i] = torch.sqrt(torch.clamp(min_dist, min=0))
 
-                query_distances[i] = min_dist
+                #query_distances[i] = min_dist
 
             
 
@@ -177,7 +189,6 @@ def main():
                 if c < NUM_CLASSES: # se la classe della query non è void
 
                     
-
                     # calcolo distanza verso la CLASSE PREDETTA
                     delta = q_vec - prototipi[c] # sottrazione tra la query e la media della classe
                     dist_sq = torch.dot(delta, torch.matmul(matrici_inverse[c], delta)) # argomento della radice quadrata
@@ -210,7 +221,7 @@ def main():
 
 
 
-            '''
+            
             # BROADCASTING CON LA QUERY CON MASK_PROB PIU ALTA PER OGNI PIXEL
 
             # per ogni pixel l'indice della query con la probabilità di maschera più alta
@@ -219,13 +230,13 @@ def main():
             # Assegna a ogni pixel la distanza della sua query vincente
             anomaly_map = query_distances[winning_query_indices] #[H_patch, W_patch]
 
-            '''
+            
 
 
             # BROADCASTING CON IL MAX PESATO
-            query_distances_view = query_distances.view(100, 1, 1)
-            weighted_masks = mask_probs * query_distances_view  # [100, 256, 256]
-            anomaly_map, _ = torch.max(weighted_masks, dim=0)   # [256, 256]
+            #query_distances_view = query_distances.view(100, 1, 1)
+            #weighted_masks = mask_probs * query_distances_view  # [100, 256, 256]
+            #anomaly_map, _ = torch.max(weighted_masks, dim=0)   # [256, 256]
 
 
             
