@@ -40,7 +40,7 @@ bold_green = "\033[1;32m"
 reset = "\033[0m"
 
 
-class LightningModule(lightning.LightningModule):
+class LightningModule_estensione(lightning.LightningModule):
     def __init__(
         self,
         network: nn.Module,
@@ -97,6 +97,16 @@ class LightningModule(lightning.LightningModule):
             incompatible_keys = self.load_state_dict(ckpt, strict=False)
             self._raise_on_incompatible(incompatible_keys, load_ckpt_class_head)
 
+        # Backbone congelata: si addestrano solo query embeddings, mask head,
+        # class head e upscale
+        self.network.encoder.backbone.requires_grad_(False)
+        frozen = sum(p.numel() for p in self.network.encoder.backbone.parameters())
+        trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        logging.info(
+            f"Backbone congelata: {frozen:,} parametri frozen, "
+            f"{trainable:,} addestrabili"
+        )
+
         self.log = torch.compiler.disable(self.log)  # type: ignore
 
     def configure_optimizers(self):
@@ -113,6 +123,9 @@ class LightningModule(lightning.LightningModule):
         ).tolist()
 
         for name, param in reversed(list(self.named_parameters())):
+            if not param.requires_grad:
+                continue
+
             lr = self.lr
 
             if name.replace("network.encoder.backbone.", "") in encoder_param_names:
@@ -176,7 +189,9 @@ class LightningModule(lightning.LightningModule):
     def training_step(self, batch, batch_idx):
         imgs, targets = batch
 
-        mask_logits_per_block, class_logits_per_block = self(imgs)
+        # EoMT_estensione restituisce anche le query aggiornate dell'ultimo layer,
+        # che serviranno alla loss sui prototipi
+        updated_queries, mask_logits_per_block, class_logits_per_block = self(imgs)
 
         losses_all_blocks = {}
         for i, (mask_logits, class_logits) in enumerate(

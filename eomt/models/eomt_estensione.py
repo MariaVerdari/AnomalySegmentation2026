@@ -16,8 +16,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-#from models.scale_block import ScaleBlock
-from scale_block import ScaleBlock
+# import dalla root del progetto (training via config) con fallback
+# per gli script lanciati direttamente dentro models/ (calcolo_prototipi, eval_anomaly)
+try:
+    from models.scale_block import ScaleBlock
+except ImportError:
+    from scale_block import ScaleBlock
 
 
 
@@ -29,18 +33,30 @@ class EoMT_estensione(nn.Module):
         num_q,
         num_blocks=4,
         masked_attn_enabled=True,
+        cosine_classifier=False,
+        temperature=10.0,
     ):
         super().__init__()
         self.encoder = encoder
         self.num_q = num_q
         self.num_blocks = num_blocks
         self.masked_attn_enabled = masked_attn_enabled
+        self.cosine_classifier = cosine_classifier
+        self.temperature = temperature
 
         self.register_buffer("attn_mask_probs", torch.ones(num_blocks))
 
         self.q = nn.Embedding(num_q, self.encoder.backbone.embed_dim)
 
-        self.class_head = nn.Linear(self.encoder.backbone.embed_dim, num_classes + 1)
+        if cosine_classifier:
+            # PAnS: niente bias, le righe del peso sono i prototipi di classe
+            self.class_head = nn.Linear(
+                self.encoder.backbone.embed_dim, num_classes + 1, bias=False
+            )
+        else:
+            self.class_head = nn.Linear(
+                self.encoder.backbone.embed_dim, num_classes + 1
+            )
 
         self.mask_head = nn.Sequential(
             nn.Linear(self.encoder.backbone.embed_dim, self.encoder.backbone.embed_dim),
@@ -61,7 +77,14 @@ class EoMT_estensione(nn.Module):
     def _predict(self, x: torch.Tensor):
         q = x[:, : self.num_q, :]
 
-        class_logits = self.class_head(q)
+        if self.cosine_classifier:
+            # PAnS (Eq. 2-3): coseno tra query e prototipi, scalato da tau.
+            # Con la cross-entropy a valle equivale alla loss del paper.
+            q_norm = F.normalize(q, dim=-1)
+            w_norm = F.normalize(self.class_head.weight, dim=-1)
+            class_logits = self.temperature * (q_norm @ w_norm.T)
+        else:
+            class_logits = self.class_head(q)
 
         x = x[:, self.num_q + self.encoder.backbone.num_prefix_tokens :, :]
         x = x.transpose(1, 2).reshape(

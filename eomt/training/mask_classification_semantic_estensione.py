@@ -5,20 +5,22 @@
 
 
 from typing import List, Optional
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from training.mask_classification_loss import MaskClassificationLoss
-from training.lightning_module import LightningModule
+from training.loss_estensione import MaskClassificationLoss
+from training.lightning_module_estensione import LightningModule_estensione
 
 
-class MaskClassificationSemantic(LightningModule):
+class MaskClassificationSemantic_estensione(LightningModule_estensione):
     def __init__(
         self,
         network: nn.Module,
         img_size: tuple[int, int],
         num_classes: int,
         attn_mask_annealing_enabled: bool,
+        prototypes_file: str,
         attn_mask_annealing_start_steps: Optional[list[int]] = None,
         attn_mask_annealing_end_steps: Optional[list[int]] = None,
         ignore_idx: int = 255,
@@ -68,6 +70,25 @@ class MaskClassificationSemantic(LightningModule):
         self.overlap_thresh = overlap_thresh
         self.stuff_classes = range(num_classes)
 
+        # Carica i prototipi (medie per classe delle query) calcolati con calcolo_prototipi.py:
+        # serviranno a inizializzare i pesi del cosine classifier (PAnS, imprinted weights)
+        statistiche = torch.load(prototypes_file, map_location="cpu")
+        prototipi = statistiche["prototipi"]
+        classi_mancanti = [c for c in range(num_classes) if c not in prototipi]
+        if classi_mancanti:
+            raise ValueError(
+                f"Prototipi mancanti per le classi {classi_mancanti} in {prototypes_file}"
+            )
+        prototypes = torch.stack([prototipi[c] for c in range(num_classes)])
+
+        # Inizializza i pesi del cosine classifier con i prototipi (imprinted weights):
+        # le prime num_classes righe partono dalle medie di classe, la riga
+        # no-object resta a inizializzazione casuale. Va fatto dopo il caricamento
+        # del checkpoint (avvenuto in super().__init__) per non essere sovrascritti.
+        if getattr(self.network, "cosine_classifier", False):
+            with torch.no_grad():
+                self.network.class_head.weight[:num_classes].copy_(prototypes)
+
         self.criterion = MaskClassificationLoss(
             num_points=num_points,
             oversample_ratio=oversample_ratio,
@@ -91,7 +112,8 @@ class MaskClassificationSemantic(LightningModule):
 
         img_sizes = [img.shape[-2:] for img in imgs]
         crops, origins = self.window_imgs_semantic(imgs)
-        mask_logits_per_layer, class_logits_per_layer = self(crops)
+        # il primo output (updated_queries) non serve per le metriche di validazione
+        _, mask_logits_per_layer, class_logits_per_layer = self(crops)
 
         targets = self.to_per_pixel_targets_semantic(targets, self.ignore_idx)
 

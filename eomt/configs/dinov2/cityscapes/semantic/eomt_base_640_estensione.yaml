@@ -1,5 +1,8 @@
 trainer:
-  max_epochs: 107
+  max_epochs: 15
+  # Validazione solo ogni 5 epoche (misura il mIoU, fa solo da guardia:
+  # le metriche di anomalia si calcolano dopo con eval_anomaly_ESTENSIONE)
+  check_val_every_n_epoch: 5
 
   default_root_dir: "/content/drive/MyDrive/Validation_Dataset"
   callbacks:
@@ -7,31 +10,43 @@ trainer:
       init_args:
         dirpath: "/content/drive/MyDrive/Validation_Dataset/checkpoints"
         filename: "eomt-epoca-{epoch:02d}"
-        save_last: true     # Salva SEMPRE l'ultimo step
-        save_top_k: 2       # Conserva solo le ultime 2 epoche per non esaurire lo spazio su Drive
-        every_n_epochs: 1   # Esegue il salvataggio alla fine di ogni epoca
+        save_last: true     # last.ckpt sempre aggiornato, per il resume tra sessioni Colab
+        save_top_k: 2       # Conserva i 2 checkpoint con mIoU di validazione migliore
+        monitor: "metrics/val_iou_all"  # senza monitor, save_top_k=2 fa crashare Lightning all'avvio
+        mode: "max"
+        every_n_epochs: 1
 
   logger:
     class_path: lightning.pytorch.loggers.wandb.WandbLogger
     init_args:
       resume: allow
       project: "eomt"
-      name: "cityscapes_semantic_eomt_base_640"
+      name: "cityscapes_semantic_eomt_base_640_estensione"
 
 
 model:
   class_path: training.mask_classification_semantic_estensione.MaskClassificationSemantic_estensione
   init_args:
-    attn_mask_annealing_enabled: True
-    prototypes_file: "cityscapes_prototypes.pt"
-    temperature: 10.0
-    attn_mask_annealing_start_steps: [3317, 8292, 13268]
-    attn_mask_annealing_end_steps: [6634, 11609, 16585]
+    # Fine-tuning da modello già addestrato: annealing già completato,
+    # va tenuto spento per non riattivare la masked attention durante il training
+    attn_mask_annealing_enabled: False
+    # Checkpoint EoMT-Cityscapes da cui partire (lo stesso usato per calcolare i prototipi)
+    ckpt_path: "/content/drive/MyDrive/Validation_Dataset/eomt_cityscapes.bin"
+    # Il vecchio class head lineare non va caricato dal checkpoint: viene sostituito
+    # dal cosine classifier (PAnS), inizializzato con i prototipi
+    load_ckpt_class_head: False
+    prototypes_file: "/content/drive/MyDrive/Validation_Dataset/cityscapes_prototypes.pt"
+    # Warmup ridotto per il fine-tuning breve (default [500, 1000] = ~5 epoche)
+    warmup_steps: [100, 200]
     network:
-      class_path: models.eomt_estensione.EoMT_estensione  
+      class_path: models.eomt_estensione.EoMT_estensione
       init_args:
         num_q: 100
         num_blocks: 3
+        # Cosine classifier in stile PAnS: i pesi del class head sono i prototipi
+        cosine_classifier: True
+        # Scala tau dei logit coseno del cosine classifier (Eq. 3 del paper PAnS)
+        temperature: 10.0
         encoder:
           class_path: models.vit.ViT
           init_args:

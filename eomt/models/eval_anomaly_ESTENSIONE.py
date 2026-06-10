@@ -66,18 +66,31 @@ def main():
     parser.add_argument('--input', type=str, required=True)
     parser.add_argument('--loadDir', type=str, required=True)
     parser.add_argument('--loadWeights', type=str, required=True)
-    parser.add_argument('--prototypes_file', type=str, required=True)
+    parser.add_argument('--prototypes_file', type=str, default=None)
+    # mahalanobis: distanza minima dai prototipi-media con covarianza globale (baseline)
+    # cosine-proto: 1 - coseno verso i prototipi-media del file .pt
+    # pans: 1 - max coseno normalizzato verso i pesi appresi del cosine head
+    parser.add_argument('--score', type=str, default='mahalanobis',
+                        choices=['mahalanobis', 'cosine-proto', 'pans'])
     parser.add_argument('--cpu', action='store_true')
-    
+
     args = parser.parse_args()
+
+    if args.score != 'pans' and args.prototypes_file is None:
+        parser.error(f"--prototypes_file è obbligatorio con --score {args.score}")
 
 
     weightspath = os.path.join(args.loadDir, args.loadWeights)
     print("Caricamento pesi modello da:", weightspath)
 
     encoder = ViT(img_size=(1024, 1024), patch_size=16, backbone_name="vit_base_patch14_reg4_dinov2")
-    model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3) 
-    model = load_my_state_dict(model, torch.load(weightspath, map_location='cpu'))
+    # con --score pans il checkpoint deve essere quello fine-tunato col cosine classifier
+    model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3,
+                            cosine_classifier=(args.score == 'pans'))
+    state_dict = torch.load(weightspath, map_location='cpu')
+    if "state_dict" in state_dict:  # checkpoint Lightning del fine-tuning
+        state_dict = state_dict["state_dict"]
+    model = load_my_state_dict(model, state_dict)
 
     
     device = torch.device("cpu" if args.cpu else "cuda")
@@ -90,17 +103,27 @@ def main():
     #### CARICAMENTO PROTOTIPI E CALCOLO MATRICI INVERSE ####
 
     
-    statistiche = torch.load(args.prototypes_file, map_location=device) #leggere e caricare file con i prototipi
-    prototipi = statistiche["prototipi"] #dizionario
+    prototipi = None
+    prototipi_stack = None
+    Sigma_inv = None
+    if args.score != 'pans':
+        statistiche = torch.load(args.prototypes_file, map_location=device) #leggere e caricare file con i prototipi
+        prototipi = statistiche["prototipi"] #dizionario
 
+        for cls_id in range(NUM_CLASSES):
+            prototipi[cls_id] = prototipi[cls_id].to(device)
 
-    
-    #PER UNICA MAT VARCOV
-    cov_globale = statistiche["cov_globale"].to(device)
-    Sigma_inv = torch.linalg.pinv(cov_globale)  # una sola inversione
+        # prototipi impilati [NUM_CLASSES, D] per lo score cosine-proto
+        prototipi_stack = torch.stack([prototipi[c] for c in range(NUM_CLASSES)])
 
-    for cls_id in range(NUM_CLASSES):
-        prototipi[cls_id] = prototipi[cls_id].to(device)
+        if args.score == 'mahalanobis':
+            #PER UNICA MAT VARCOV
+            cov_globale = statistiche["cov_globale"].to(device)
+            Sigma_inv = torch.linalg.pinv(cov_globale)  # una sola inversione
+
+    # prototipi appresi per lo score pans: pesi del cosine head, no-object esclusa
+    net = model.module if isinstance(model, torch.nn.DataParallel) else model
+    w_known = net.class_head.weight[:NUM_CLASSES].detach()
 
 
     
@@ -147,10 +170,29 @@ def main():
             updated_queries = updated_queries.squeeze(0) # da [Batch, Queries, lunghezza queries] a [Queries, lunghezza queries] 
 
 
-            #### CALCOLO DISTANZA DI MAHALANOBIS PER OGNI QUERY ####
-            query_distances = torch.zeros(100, device=device) #vettore lungo quanto in numero di query
-            
-            for i in range(100):
+            #### CALCOLO SCORE DI ANOMALIA PER OGNI QUERY ####
+
+            if args.score == 'pans':
+                # PAnS (Eq. 4-5): score = 1 - max_c (cos(q, w_c) + 1)/2
+                # sui prototipi appresi (pesi del cosine head)
+                q_norm = F.normalize(updated_queries, dim=-1)
+                w_norm = F.normalize(w_known, dim=-1)
+                cos_sim = q_norm @ w_norm.T                  # [Queries, NUM_CLASSES]
+                s_bar = (cos_sim + 1.0) / 2.0                # "probabilità binaria" in [0, 1]
+                query_distances = 1.0 - s_bar.max(dim=1).values
+
+            elif args.score == 'cosine-proto':
+                # 1 - coseno verso i prototipi-media del file .pt, minimo sulle classi
+                q_norm = F.normalize(updated_queries, dim=-1)
+                p_norm = F.normalize(prototipi_stack, dim=-1)
+                cos_sim = q_norm @ p_norm.T                  # [Queries, NUM_CLASSES]
+                query_distances = (1.0 - cos_sim).min(dim=1).values
+
+            else:
+                query_distances = torch.zeros(100, device=device) #vettore lungo quanto in numero di query
+
+            # DISTANZA DI MAHALANOBIS (solo con --score mahalanobis, comportamento originale)
+            for i in range(100 if args.score == 'mahalanobis' else 0):
                 #c = pred_classes[i].item() #classe predetta per quella query
                 q_vec = updated_queries[i] #la query in questione
 
@@ -290,7 +332,7 @@ def main():
 
             if len(ood_gts_list) <= 10:
                 debug_stem = os.path.splitext(os.path.basename(path))[0]
-                output_drive_dir = "/content/drive/MyDrive/Validation_Dataset/heatmaps_mahalanobis"
+                output_drive_dir = f"/content/drive/MyDrive/Validation_Dataset/heatmaps_{args.score}"
                 os.makedirs(output_drive_dir, exist_ok=True)
 
                 cmap_min, cmap_max = anomaly_result.min(), anomaly_result.max()
@@ -342,8 +384,8 @@ def main():
     print(f'AUPRC score: {prc_auc*100.0:.2f} %')
     print(f'FPR@TPR95:   {fpr*100.0:.2f} %')
 
-    with open('results_mahalanobis.txt', 'a') as file:
-        file.write(f'AUPRC: {prc_auc*100.0:.2f} | FPR@TPR95: {fpr*100.0:.2f}\n')
+    with open(f'results_{args.score}.txt', 'a') as file:
+        file.write(f'Score: {args.score} | Weights: {args.loadWeights} | AUPRC: {prc_auc*100.0:.2f} | FPR@TPR95: {fpr*100.0:.2f}\n')
 
 if __name__ == '__main__':
     main()
