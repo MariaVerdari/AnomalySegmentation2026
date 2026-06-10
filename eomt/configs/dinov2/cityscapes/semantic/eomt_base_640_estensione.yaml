@@ -1,0 +1,40 @@
+trainer:
+  max_epochs: 107
+
+  default_root_dir: "/content/drive/MyDrive/Validation_Dataset"
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        dirpath: "/content/drive/MyDrive/Validation_Dataset/checkpoints"
+        filename: "eomt-epoca-{epoch:02d}"
+        save_last: true     # Salva SEMPRE l'ultimo step
+        save_top_k: 2       # Conserva solo le ultime 2 epoche per non esaurire lo spazio su Drive
+        every_n_epochs: 1   # Esegue il salvataggio alla fine di ogni epoca
+
+  logger:
+    class_path: lightning.pytorch.loggers.wandb.WandbLogger
+    init_args:
+      resume: allow
+      project: "eomt"
+      name: "cityscapes_semantic_eomt_base_640"
+
+
+model:
+  class_path: training.mask_classification_semantic_estensione.MaskClassificationSemantic_estensione
+  init_args:
+    attn_mask_annealing_enabled: True
+    prototypes_file: "cityscapes_prototypes.pt"
+    temperature: 10.0
+    attn_mask_annealing_start_steps: [3317, 8292, 13268]
+    attn_mask_annealing_end_steps: [6634, 11609, 16585]
+    network:
+      class_path: models.eomt_estensione.EoMT_estensione  
+      init_args:
+        num_q: 100
+        num_blocks: 3
+        encoder:
+          class_path: models.vit.ViT
+          init_args:
+            backbone_name: vit_base_patch14_reg4_dinov2
+data:
+  class_path: datasets.cityscapes_semantic.CityscapesSemantic
