@@ -16,12 +16,12 @@ trainer:
         mode: "max"
         every_n_epochs: 1
 
+  # Logger CSV locale (niente wandb): metriche in metrics.csv dentro logs/
   logger:
-    class_path: lightning.pytorch.loggers.wandb.WandbLogger
+    class_path: lightning.pytorch.loggers.CSVLogger
     init_args:
-      resume: allow
-      project: "eomt"
-      name: "cityscapes_semantic_eomt_base_640_estensione"
+      save_dir: "/content/drive/MyDrive/Validation_Dataset/logs"
+      name: "eomt_estensione"
 
 
 model:

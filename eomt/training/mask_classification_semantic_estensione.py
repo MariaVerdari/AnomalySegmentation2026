@@ -126,7 +126,8 @@ class MaskClassificationSemantic_estensione(LightningModule_estensione):
 
             self.update_metrics_semantic(logits, targets, i)
 
-            if batch_idx == 0:
+            # il plot delle predizioni usa wandb: con altri logger (es. CSVLogger) si salta
+            if batch_idx == 0 and hasattr(self.trainer.logger.experiment, "log"):
                 self.plot_semantic(
                     imgs[0], targets[0], logits[0], log_prefix, i, batch_idx
                 )
