@@ -36,6 +36,10 @@ model:
     # dal cosine classifier (PAnS), inizializzato con i prototipi
     load_ckpt_class_head: False
     prototypes_file: "/content/drive/MyDrive/Validation_Dataset/cityscapes_prototypes.pt"
+    # Prototipi fissi: la cosine head resta congelata alle medie di classe (imprinting);
+    # la CE può solo avvicinare le query ai prototipi, non spostare i prototipi.
+    # Per ripetere l'esperimento precedente (head libera) rimettere False.
+    freeze_class_head: True
     # Warmup ridotto per il fine-tuning breve (default [500, 1000] = ~5 epoche)
     warmup_steps: [100, 200]
     network:

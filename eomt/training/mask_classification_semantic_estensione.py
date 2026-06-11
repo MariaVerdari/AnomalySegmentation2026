@@ -4,6 +4,7 @@
 # ---------------------------------------------------------------
 
 
+import logging
 from typing import List, Optional
 import torch
 import torch.nn as nn
@@ -21,6 +22,7 @@ class MaskClassificationSemantic_estensione(LightningModule_estensione):
         num_classes: int,
         attn_mask_annealing_enabled: bool,
         prototypes_file: str,
+        freeze_class_head: bool = False,
         attn_mask_annealing_start_steps: Optional[list[int]] = None,
         attn_mask_annealing_end_steps: Optional[list[int]] = None,
         ignore_idx: int = 255,
@@ -88,6 +90,18 @@ class MaskClassificationSemantic_estensione(LightningModule_estensione):
         if getattr(self.network, "cosine_classifier", False):
             with torch.no_grad():
                 self.network.class_head.weight[:num_classes].copy_(prototypes)
+
+        # Esperimento "prototipi fissi": congela la cosine head, così i prototipi
+        # restano le medie di classe e la CE può solo avvicinare le query ai
+        # prototipi giusti (i prototipi non possono andare incontro alle anomalie).
+        # Nota: resta congelata anche la riga no-object (init casuale), che fa
+        # da direzione-ancora fissa per le query non assegnate a nessuna classe.
+        if freeze_class_head:
+            self.network.class_head.requires_grad_(False)
+            n_frozen = sum(p.numel() for p in self.network.class_head.parameters())
+            logging.info(
+                f"Cosine head congelata: {n_frozen:,} parametri frozen (prototipi fissi)"
+            )
 
         self.criterion = MaskClassificationLoss(
             num_points=num_points,
