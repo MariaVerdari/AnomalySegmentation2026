@@ -16,8 +16,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-# import dalla root del progetto (training via config) con fallback
-# per gli script lanciati direttamente dentro models/ (calcolo_prototipi, eval_anomaly)
 try:
     from models.scale_block import ScaleBlock
 except ImportError:
@@ -49,7 +47,7 @@ class EoMT_estensione(nn.Module):
         self.q = nn.Embedding(num_q, self.encoder.backbone.embed_dim)
 
         if cosine_classifier:
-            # PAnS: niente bias, le righe del peso sono i prototipi di classe
+            # PAnS no bias
             self.class_head = nn.Linear(
                 self.encoder.backbone.embed_dim, num_classes + 1, bias=False
             )
@@ -78,8 +76,7 @@ class EoMT_estensione(nn.Module):
         q = x[:, : self.num_q, :]
 
         if self.cosine_classifier:
-            # PAnS (Eq. 2-3): coseno tra query e prototipi, scalato da tau.
-            # Con la cross-entropy a valle equivale alla loss del paper.
+            # PAnS
             q_norm = F.normalize(q, dim=-1)
             w_norm = F.normalize(self.class_head.weight, dim=-1)
             class_logits = self.temperature * (q_norm @ w_norm.T)
