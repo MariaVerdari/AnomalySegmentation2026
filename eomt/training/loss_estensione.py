@@ -1,12 +1,4 @@
-# ---------------------------------------------------------------
-# © 2025 Mobile Perception Systems Lab at TU/e. All rights reserved.
-# Licensed under the MIT License.
-#
-# Portions of this file are adapted from the Hugging Face Transformers library,
-# specifically from the Mask2Former loss implementation, which itself is based on
-# Mask2Former and DETR by Facebook, Inc. and its affiliates.
-# Used under the Apache 2.0 License.
-# ---------------------------------------------------------------
+# SAME AS mask_classification_loss.py
 
 
 from typing import List, Optional
