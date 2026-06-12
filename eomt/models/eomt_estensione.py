@@ -47,11 +47,11 @@ class EoMT_estensione(nn.Module):
         self.q = nn.Embedding(num_q, self.encoder.backbone.embed_dim)
 
         if cosine_classifier:
-            # PAnS no bias
+            # PAnS no bias cosine head
             self.class_head = nn.Linear(
                 self.encoder.backbone.embed_dim, num_classes + 1, bias=False
             )
-        else:
+        else: #normal linear head
             self.class_head = nn.Linear(
                 self.encoder.backbone.embed_dim, num_classes + 1
             )
@@ -76,11 +76,11 @@ class EoMT_estensione(nn.Module):
         q = x[:, : self.num_q, :]
 
         if self.cosine_classifier:
-            # PAnS
+            # PAnS cosine distance for logits
             q_norm = F.normalize(q, dim=-1)
             w_norm = F.normalize(self.class_head.weight, dim=-1)
             class_logits = self.temperature * (q_norm @ w_norm.T)
-        else:
+        else: #normal logits
             class_logits = self.class_head(q)
 
         x = x[:, self.num_q + self.encoder.backbone.num_prefix_tokens :, :]
