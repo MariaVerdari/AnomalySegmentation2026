@@ -14,7 +14,7 @@ from argparse import ArgumentParser
 from ood_metrics import fpr_at_95_tpr, calc_metrics, plot_roc, plot_pr,plot_barcode
 from sklearn.metrics import roc_auc_score, roc_curve, auc, precision_recall_curve, average_precision_score
 from torchvision.transforms import Compose, Resize, ToTensor, Normalize
-from huggingface_hub import hf_hub_download   #per scaricare i pesi da Hugging Face
+from huggingface_hub import hf_hub_download   #per scaricare i pesi da Hugging Face, alla fine non usato
 import warnings
 from huggingface_hub.utils import RepositoryNotFoundError
 import torch.nn.functional as F
@@ -33,7 +33,7 @@ torch.manual_seed(seed)
 
 
 NUM_CHANNELS = 3 # rgb
-NUM_CLASSES = 19 # EOMT NE AGGIUNGE 1?
+NUM_CLASSES = 19 # EOMT ne aggiunge una cioè la void
 
 # gpu training specific
 torch.backends.cudnn.deterministic = True
@@ -42,12 +42,12 @@ torch.backends.cudnn.benchmark = True
 input_transform = Compose(
     [
         Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
-        ToTensor() # trasforma in tenosore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
-        #Normalize([.485, .456, .406], [.229, .224, .225]), # normalizzazione per non so quale dataset
+        ToTensor() # trasforma in tensore e mette (Canali, Altezza, Larghezza)
+        #Normalize([.485, .456, .406], [.229, .224, .225]), 
     ]
 )
 
-target_transform = Compose( #trasforamzioni per l'etichetta
+target_transform = Compose( #trasforamzioni per la label
     [
         Resize((512, 1024), Image.NEAREST),
     ]
@@ -56,7 +56,7 @@ target_transform = Compose( #trasforamzioni per l'etichetta
 
 def main():
 
-    # per passare immagine dal terminale
+    # per passare immagini dal terminale
     parser = ArgumentParser()
     parser.add_argument(
         "--input",
@@ -68,7 +68,7 @@ def main():
     parser.add_argument('--loadDir',default="../trained_models/")  #cerca cartella
     parser.add_argument('--loadWeights', default="eomt_pretrained.pth") #pesi
     parser.add_argument('--loadModel', default="eomt.py") #modello EoMT
-    parser.add_argument('--subset', default="val")  # che dataset prende #can be val or train (must have labels)
+    parser.add_argument('--subset', default="val")  # che dataset prende 
    
     #parser.add_argument('--datadir', default="/home/shyam/ViT-Adapter/segmentation/data/cityscapes/")
     parser.add_argument('--datadir', default="/content/drive/MyDrive/Validation_Dataset/")
@@ -90,7 +90,6 @@ def main():
     
     ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
 
-    # forse questo blocco spostiamolo a quando siamo pronti a stampare i risultati
     if not os.path.exists('results.txt'): # file dei risultati
         open('results.txt', 'w').close() # crea se non esiste
     file = open('results.txt', 'a') # se esiste scrive in coda
@@ -103,8 +102,8 @@ def main():
 
     #AGGIUNTA ENCODER
     encoder = ViT(
-        img_size=(512, 1024),   # <-- IL PEZZO OBBLIGATORIO CHE MANCAVA!
-        patch_size=16,          # <-- CAMBIATO DA 14 A 16 PERCHE NON COMBACIAVA
+        img_size=(512, 1024),   
+        patch_size=16,          
         backbone_name="vit_base_patch14_reg4_dinov2"    )
 
 
@@ -113,7 +112,7 @@ def main():
         num_classes=NUM_CLASSES,
         num_q=100,
         num_blocks=3
-    ) # creo l'istanza della classe (prende in input il numero delle classi da distinguere e il numero di queries e l'encoder)
+    ) # creo l'istanza della classe (prende in input il numero delle classi da distinguere, il numero di queries e l'encoder)
     
 
     '''
@@ -164,29 +163,29 @@ def main():
         return model
 
     
-'''
-#NUOVA VERSIONE CON NOMI GIUSTI 
+    '''
+    #NUOVA VERSIONE 
     def load_my_state_dict(model, state_dict):  
             own_state = model.state_dict()
             for name, param in state_dict.items(): 
                 
-                # 1. Puliamo il nome della chiave dai prefissi extra
+                # pulisce il nome della chiave dai prefissi extra
                 clean_name = name
                 if clean_name.startswith("network."):
                     clean_name = clean_name.replace("network.", "")
                 if clean_name.startswith("module."):
                     clean_name = clean_name.replace("module.", "")
                     
-                # 2. Controlliamo se la chiave pulita esiste nel modello
+                # si controlla se la chiave pulita esiste nel modello
                 if clean_name not in own_state:
                     print(name, " non caricato (chiave pulita cercata:", clean_name, ")")
                     continue
                 else:
-                    # 3. Se le dimensioni combaciano, copia i pesi
+                    # copia i pesi se le dimensioni combaciano    SONO ARRIVATA QUI
                     if own_state[clean_name].shape == param.shape:
                         own_state[clean_name].copy_(param)
                     
-                    # 2. SEZIONE NUOVA: Se è il pos_embed, lo interpoliamo dinamicamente!
+                    # se è il pos_embed, lo si interpola dinamicamente
                     elif "pos_embed" in clean_name:
                         
                         # I pesi sono [1, 4096, 768] (griglia 64x64). Vogliamo [1, 2048, 768] (griglia 32x64).
