@@ -29,7 +29,7 @@ NUM_CLASSES = 20
 # blocco aggiunto per le etichette sfasate 
 
 '''
-class MapToTrainIds(object): #stile nostro che non è top
+class MapToTrainIds(object): # vecchio metodo per mappare, sostituito da quello più efficiente
     def __init__(self):
         mapping = {
             0: 255, 1: 255, 2: 255, 3: 255, 4: 255, 5: 255, 6: 255, 7: 0, 8: 1, 9: 255,
@@ -48,10 +48,10 @@ class MapToTrainIds(object): #stile nostro che non è top
         return Image.fromarray(mapped_np)
 '''
     
-class MapToTrainIds(object): #stile di federica
+class MapToTrainIds(object): 
     def __init__(self):
         # Inizializziamo tutto a 19 (il valore void dell'ERFNet)
-        self.lut = np.full(256, 19, dtype=np.uint8)
+        self.lut = np.full(256, 19, dtype=np.uint8) 
         
         # Mappiamo SOLO i labelId originali di Cityscapes nei rispettivi trainId
         train_mapping = {
@@ -129,21 +129,21 @@ def main(args):
 
     start = time.time()
 
-    for step, (images, labels, filename, filenameGt) in enumerate(loader):
+    for step, (images, labels, filename, filenameGt) in enumerate(loader):  #ciclo di elaborazione dei batch
         if (not args.cpu):
             images = images.cuda()
             labels = labels.cuda()
 
         inputs = Variable(images)
         with torch.no_grad():
-            outputs = model(inputs) #logits
-            #temperature sclaing
+            outputs = model(inputs) #logits, forward pass, non serve softmax
+            #temperature scaling
             temperature = [0.5,0.75,1.1]
             scaled_result_05 = outputs/ temperature[0]
             scaled_result_075 = outputs / temperature[1]
             scaled_result_11 = outputs / temperature[2]
 
-        iouEvalVal.addBatch(outputs.max(1)[1].unsqueeze(1).data, labels)
+        iouEvalVal.addBatch(outputs.max(1)[1].unsqueeze(1).data, labels) # aggiunge previsione finale e soluzione vera per aggiornare matrice di confusione
         iouEvalVal_05.addBatch(scaled_result_05.max(1)[1].unsqueeze(1).data, labels)
         iouEvalVal_075.addBatch(scaled_result_075.max(1)[1].unsqueeze(1).data, labels)
         iouEvalVal_11.addBatch(scaled_result_11.max(1)[1].unsqueeze(1).data, labels)
@@ -154,11 +154,12 @@ def main(args):
         print (step, filenameSave)
 
 
-    iouVal, iou_classes = iouEvalVal.getIoU()
+    iouVal, iou_classes = iouEvalVal.getIoU() # calcola iou da matrice di confusione
     iouVal_05, iou_classes_05 = iouEvalVal_05.getIoU()
     iouVal_075, iou_classes_075 = iouEvalVal_075.getIoU()
     iouVal_11, iou_classes_11 = iouEvalVal_11.getIoU()
 
+    #formatta iou per stampa
     iou_classes_str = []
     for i in range(iou_classes.size(0)):
         iouStr = getColorEntry(iou_classes[i])+'{:0.2f}'.format(iou_classes[i]*100) + '\033[0m'

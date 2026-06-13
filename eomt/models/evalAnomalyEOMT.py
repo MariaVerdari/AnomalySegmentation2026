@@ -137,56 +137,7 @@ def main():
     ) # creo l'istanza della classe (prende in input il numero delle classi da distinguere, il numero di queries e l'encoder)
     
 
-    '''
-    name = config.get("trainer", {}).get("logger", {}).get("init_args", {}).get("name") # cerca il nome in configs in cui ci sono dei files
-
-    if name is None:
-        warnings.warn("No logger name found in the config. Please specify a model name.")
-    else:
-        try:
-            state_dict_path = hf_hub_download(   #cerca la repo su internet e scarica il file con i pesi, la varibile conterrà il percorso locale
-                repo_id=f"tue-mps/{name}",
-                filename="pytorch_model.bin",
-            )
-
-            is_dinov3 = "dinov3" in name
-
-            # come gestire se il nome del modello contiene la parola "dinov3" che è particolare e il modello stesso si carica i pesi da solo
-            if is_dinov3:
-                model_kwargs["ckpt_path"] = state_dict_path
-                model_kwargs["delta_weights"] = True
-
-
-            if not is_dinov3:
-                state_dict = torch.load(  #carica i pesi se non è dinov3
-                    state_dict_path, map_location=f"cuda:{device}", weights_only=True
-                )
-                model.load_state_dict(state_dict, strict=False) # prende i numeri e li mette nella rete neurale appena creata, caricando solo quello che combacia a livello di layers
-
-        except RepositoryNotFoundError:  #gestisce la situazione in cui si trova la repo su internet
-            warnings.warn(
-                f"Pre-trained model not found for `{name}`. Please load your own checkpoint."
-            )
-
-    '''
-    
-    '''
-    def load_my_state_dict(model, state_dict):  #custom function to load model when not all dict elements
-        own_state = model.state_dict()
-        for name, param in state_dict.items(): #state dict associa a ogni layer della rete i suoi pesi
-            if name not in own_state:
-                if name.startswith("module."):
-                    own_state[name.split("module.")[-1]].copy_(param)
-                else:
-                    print(name, " not loaded")
-                    continue
-            else:
-                own_state[name].copy_(param)
-        return model
-
-    
-    '''
-    #NUOVA VERSIONE 
+   
     def load_my_state_dict(model, state_dict):  
             own_state = model.state_dict()
             for name, param in state_dict.items(): 
@@ -203,63 +154,58 @@ def main():
                     print(name, " non caricato (chiave pulita cercata:", clean_name, ")")
                     continue
                 else:
-                    # copia i pesi se le dimensioni combaciano    SONO ARRIVATA QUI
+                    # copia i pesi se le dimensioni combaciano    
                     if own_state[clean_name].shape == param.shape:
                         own_state[clean_name].copy_(param)
                     
                     # se è il pos_embed, lo si interpola dinamicamente
                     elif "pos_embed" in clean_name:
                         
-                        # I pesi sono [1, 4096, 768] (griglia 64x64). Vogliamo [1, 2048, 768] (griglia 32x64).
-                        dim = param.shape[-1]
+                        # i pesi sono [1, 4096, 768] (griglia 64x64), vogliamo [1, 2048, 768] (griglia 32x64), da immagini quadrate a rettangolari
+                        dim = param.shape[-1] #profondità 768
                         
-                        # Calcoliamo la griglia originale (radice quadrata di 4096 = 64)
+                        # si calcola la griglia originale (radice quadrata di 4096 = 64)
                         orig_size = int(param.shape[1] ** 0.5) 
                         
-                        # Immagini a 1024x1024 e patch 16 -> griglia 64x64 (combacia col checkpoint:
-                        # questo ramo non scatta più, ma resta corretto se si cambia risoluzione)
+                        # dimensioni nuova griglia
                         H_new = 1024 // 16  # 64
                         W_new = 1024 // 16  # 64
                         
-                        # Trasformiamo la sequenza 1D in un'immagine 2D per poterla ridimensionare
+                        # si trasforma sequenza 1D in 2D per poterla ridimensionare
                         param_reshaped = param.reshape(1, orig_size, orig_size, dim).permute(0, 3, 1, 2)
                         
-                        # Ridimensioniamo (interpolazione bilineare)
+                        # interpolazione bilineare per adattare la griglia a 32x64
                         param_interpolated = F.interpolate(param_reshaped, size=(H_new, W_new), mode='bilinear', align_corners=False)
                         
-                        # La riportiamo alla forma di sequenza 1D [1, 2048, 768]
+                        # si riporta a 1D [1, 2048, 768]
                         param_final = param_interpolated.permute(0, 2, 3, 1).reshape(1, -1, dim)
                         
-                        # Copiamo i pesi adattati nel modello
+                        # si copiano i pesi adattati nel modello
                         own_state[clean_name].copy_(param_final)
-                        print(f"✅ pos_embed interpolato con successo da 4096 a 2048!")
+                        print(f"pos_embed interpolato con successo da 4096 a 2048.")
                     else:
-                        print(f"Dimension mismatch per {clean_name}: modello {own_state[clean_name].shape} vs pesi {param.shape}")
+                        print(f"dimension mismatch per {clean_name}: modello {own_state[clean_name].shape} e pesi {param.shape}")
                         
             return model
+    
 
 
-
-                 
-        
-
-
-    #DEBUG
+    # DEBUG
     pesi_salvati = torch.load(weightspath, map_location='cpu')
     
     print("\n" + "="*40)
-    print("🔍 DEBUG: PRIME 10 CHIAVI NEL FILE .BIN:")
+    print("DEBUG: PRIME 10 CHIAVI NEL FILE .BIN:")
     print("="*40)
     for k in list(pesi_salvati.keys())[:10]:
         print(k)
 
     print("\n" + "="*40)
-    print("🔍 DEBUG: PRIME 10 CHIAVI NEL TUO MODELLO:")
+    print("DEBUG: PRIME 10 CHIAVI NEL NOSTRO MODELLO:")
     print("="*40)
     for k in list(model.state_dict().keys())[:10]:
         print(k)
     print("="*40 + "\n")
-    # --- FINE BLOCCO DI DEBUG ---
+    # FINE DEBUG
 
     model = load_my_state_dict(model, torch.load(weightspath, map_location=lambda storage, loc: storage)) #carica i pesi del file dei pesi dentro all'istanza model
     print ("Model and weights LOADED successfully")
@@ -267,7 +213,7 @@ def main():
 
      #PARALLELIZZARE SOLO ORA 
     if (not args.cpu):
-        model = torch.nn.DataParallel(model).cuda() # Se non hai forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
+        model = torch.nn.DataParallel(model).cuda() # se non viene forzato l'uso della CPU, il programma assume GPU e se possibile parallelizza
 
 
 
@@ -278,24 +224,18 @@ def main():
 
     for path in glob.glob(os.path.expanduser(str(args.input[0]))): #ciclo su tutti i percorsi  delle immagini del dataset
         print(path)
-        images = input_transform((Image.open(path).convert('RGB'))).unsqueeze(0).float().cuda() # forza RGB (3 channels), applico trasformazioni dell'input, aggiungo dimensione del batch
+        images = input_transform((Image.open(path).convert('RGB'))).unsqueeze(0).float().cuda() # si forza RGB (3 channels), si applicano trasformazioni dell'input, si aggiunge la dimensione del batch
         # images = images.permute(0,3,1,2) #[Batch, Canali, Altezza, Larghezza]
         # NON SERVE DAVVERO INVERTIRE
-       
 
-        '''
+
         with torch.no_grad(): # senza calcolare i gradienti
-            result = model(images) # è un tensore, contiene i logits per ogni classe per ogni pixel (Batch, Classi, Altezza, Larghezza)
-        '''
-
-
-        with torch.no_grad():
 
             mask_logits_list, class_logits_list = model(images) #output dal modello EoMT
             
             # previsioni dell'ultimo layer [-1]
             mask_logits = mask_logits_list[-1]   #  [Batch, Queries, H, W]
-            class_logits = class_logits_list[-1] #  [Batch, Queries, Num_Classes + 1]
+            class_logits = class_logits_list[-1] #  [Batch, Queries, Num_Classes + 1] c'è anche la void
 
             mask_probs = torch.sigmoid(mask_logits) # le maschere diventano valori tra 0 e 1
             
@@ -315,7 +255,7 @@ def main():
         # MAXLOGIT
         anomaly_maxlogit_result = - np.max(result.squeeze(0).data.cpu().numpy(), axis=0)  # per ogni pixel prendo il massimo tra i logit delle classi, LO METTO NEGATIVO (SENZA SOTTRARRE da 1) per avere un punteggio di anomalia (maxlogit)    
        
-        #Ora facciamo il softmax, IMPLEMENTATO DA NOI
+        #softmax, IMPLEMENTATO DA NOI
         soft_result = torch.softmax(result, dim=1) # trasforma i logit in probabilità, non c'entra con i tre result, serve per msp e maxentropy
        
         #MSP per ogni pixel prendo il massimo tra le probabilità delle classi, sottraggo da 1 per avere un punteggio di anomalia (maxsoftmax)
@@ -326,8 +266,6 @@ def main():
 
 
         #calcolo RbA
-        #CONTROLLARE IL MENO E IL LOGIT/PROBABILITà
-
         rba_anomaly =- torch.sum(torch.tanh(result), dim=1) # somma su tutte le classi e viene [Batch, Altezza, Larghezza]
             
         anomaly_rba_result = rba_anomaly.squeeze(0).cpu().numpy() # si traforma in numpy e si toglie la dim del batch per metterlo nella lista
@@ -340,7 +278,7 @@ def main():
             msp_temp_results[t] = 1.0 - np.max(scaled_soft_result.squeeze(0).data.cpu().numpy(), axis=0)
 
 
-        # DOBBIAMO FARE IN MODO CHE FUNZIONI CON TUTTI I DATASET
+        # per farlo funzionare con tutti i dataset
         pathGT = path.replace("images", "labels_masks")  # percorso del file che contiene la label              
         if "RoadObsticle21" in pathGT:    # estensione giusta
            pathGT = pathGT.replace("webp", "png")
@@ -351,9 +289,9 @@ def main():
         print(pathGT)
         mask = Image.open(pathGT) #apre le labels
         mask = target_transform(mask) # trasforma con resize
-        ood_gts = np.array(mask) # converte in un array NumPy, diventa matrice di 0 e 1 e numeri off topic
+        ood_gts = np.array(mask) # converte in un array NumPy, diventa matrice di 0 e 1 e altri numeri
        
-        #questo pezzo è per creare uno standard a prescindere dai singoli dataset: 0 per normale, 1 anomalia, 255 per off topic (non considerato)
+        #questo pezzo è per creare uno standard a prescindere dai singoli dataset: 0 per normale, 1 anomalia, 255 non considerato
         if "RoadAnomaly" in pathGT:
             ood_gts = np.where((ood_gts==2), 1, ood_gts)
         if "LostAndFound" in pathGT:
@@ -402,7 +340,7 @@ def main():
                  output_drive_dir = "/content/drive/MyDrive/Validation_Dataset/RoadObsticle21/heatmaps_rba"
                  os.makedirs(output_drive_dir, exist_ok=True)
 
-                 # 1. Normalizzazione min-max locale a [0, 255]
+                 # normalizzazione min-max locale a [0, 255]
                  cmap_min, cmap_max = cosidered_anomaly_result.min(), cosidered_anomaly_result.max()
                  if cmap_max - cmap_min > 1e-8:
                      normalized_map = (cosidered_anomaly_result - cmap_min) / (cmap_max - cmap_min)
@@ -410,22 +348,22 @@ def main():
                      normalized_map = np.zeros_like(cosidered_anomaly_result)
                  map_u8 = (normalized_map * 255).astype(np.uint8)
 
-                 # 2. Applicazione della colormap JET (Rosso = Anomalia)
+                 # applicazione della colormap JET (Rosso = Anomalia)
                  heatmap = cv2.applyColorMap(map_u8, cv2.COLORMAP_JET)
 
-                 # 3. Lettura e ridimensionamento dell'immagine originale a 1024x512
+                 # lettura e ridimensionamento dell'immagine originale a 1024x512
                  img_bgr = cv2.imread(path)
                  if img_bgr is not None:
                      h, w = cosidered_anomaly_result.shape
                      img_bgr = cv2.resize(img_bgr, (w, h), interpolation=cv2.INTER_LINEAR)
 
-                     # 4. Sovrapposizione (trasparenza al 50%)
+                     # sovrapposizione con trasparenza al 50%
                      overlay = cv2.addWeighted(heatmap, 0.5, img_bgr, 0.5, 0)
 
-                     # 5. Salvataggio su Google Drive
+                     # salvataggio su Drive
                      debug_name = os.path.join(output_drive_dir, f"heatmap_{debug_stem}.jpg")
                      cv2.imwrite(debug_name, overlay)
-                     print(f"-> [HEATMAP TRASPARENTE {len(ood_gts_list)}/10] Salvata in: {debug_name}")
+                     print(f"[HEATMAP TRASPARENTE {len(ood_gts_list)}/10] salvata in: {debug_name}")
 
 
 
