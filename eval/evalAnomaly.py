@@ -79,7 +79,12 @@ def main():
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--cpu', action='store_true')
+    # --temps: sottoinsieme di temperature da valutare in QUESTO run (per spezzare lo sweep
+    # su più run e non esaurire la RAM sui dataset grandi). Default: tutta la griglia TEMPS.
+    parser.add_argument('--temps', type=float, nargs='+', default=None)
     args = parser.parse_args() #legge dal terminale (o quando lancio su colab)
+
+    temps_to_use = args.temps if args.temps else TEMPS
 
     #creo tutte le liste per salvare i risultati dei vari metodi 
     anomaly_score_msp_list = [] # punteggi di anomalia con msp
@@ -87,7 +92,7 @@ def main():
     anomaly_score_maxlogit_list = [] # punteggi di anomalia calcolati con maxlogit
     # Sweep temperatura per MSP: per ogni T salvo SOLO i pixel validi (1D, float16),
     # non le mappe intere -> RAM bassa, posso tenere molte temperature senza OOM.
-    anomaly_score_temp_lists = {t: [] for t in TEMPS}
+    anomaly_score_temp_lists = {t: [] for t in temps_to_use}
     temp_label_list = []  # label 0/1 dei pixel validi, allineate alle liste sopra
 
     ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
@@ -149,7 +154,7 @@ def main():
 
         # temperature scaling per MSP: una mappa MSP per ogni T della griglia (un solo forward)
         msp_temp_results = {}
-        for t in TEMPS:
+        for t in temps_to_use:
             scaled_soft_result = torch.softmax(result / t, dim=1)
             msp_temp_results[t] = 1.0 - np.max(scaled_soft_result.squeeze(0).data.cpu().numpy(), axis=0)
         
@@ -192,7 +197,7 @@ def main():
              # mappe intere) ma precisione piena -> T=1.0 coincide con l'MSP base.
              valid_sweep = (ood_gts == 0) | (ood_gts == 1)
              temp_label_list.append(ood_gts[valid_sweep].astype(np.uint8))
-             for t in TEMPS:
+             for t in temps_to_use:
                  anomaly_score_temp_lists[t].append(msp_temp_results[t][valid_sweep].astype(np.float32))
 
         del result, anomaly_msp_result, anomaly_entropy_result, anomaly_maxlogit_result, msp_temp_results, ood_gts, mask  # libera memoria una volta salvate le info
@@ -273,7 +278,7 @@ def main():
     with open(csv_path, "a") as csv_f:
         if write_header:
             csv_f.write("dataset,T,AUPRC,FPR\n")
-        for t in TEMPS:
+        for t in temps_to_use:
             scores_t = np.concatenate(anomaly_score_temp_lists[t])   # solo pixel validi (float32)
             anomaly_score_temp_lists[t] = None   # libero la lista accumulata di questa T
             auprc_t = average_precision_score(val_label_sweep, scores_t) * 100.0
