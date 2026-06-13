@@ -98,8 +98,10 @@ def main():
     anomaly_score_maxentropy_list = [] # punteggi di anomalia calcolati con l'entropia
     anomaly_score_maxlogit_list = [] # punteggi di anomalia calcolati con maxlogit
     anomaly_score_rba_list = [] # punteggi di anomalia calcolati con rba
-    # Sweep temperatura per MSP: una lista di mappe MSP per ogni T della griglia
+    # Sweep temperatura per MSP: per ogni T salvo SOLO i pixel validi (1D, float16),
+    # non le mappe intere -> RAM bassa, posso tenere molte temperature senza OOM.
     anomaly_score_temp_lists = {t: [] for t in TEMPS}
+    temp_label_list = []  # label 0/1 dei pixel validi, allineate alle liste sopra
 
     
     ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
@@ -366,8 +368,11 @@ def main():
              anomaly_score_maxentropy_list.append(anomaly_entropy_result) # aggiunge alla lista dei punteggi di anomalia con entropia
              anomaly_score_maxlogit_list.append(anomaly_maxlogit_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
              anomaly_score_rba_list.append(anomaly_rba_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
+             # tengo solo i pixel validi (0/1) e in float16: poca RAM, tutte le temperature
+             valid_sweep = (ood_gts == 0) | (ood_gts == 1)
+             temp_label_list.append(ood_gts[valid_sweep].astype(np.uint8))
              for t in TEMPS:
-                 anomaly_score_temp_lists[t].append(msp_temp_results[t])
+                 anomaly_score_temp_lists[t].append(msp_temp_results[t][valid_sweep].astype(np.float16))
 
    
              # === LOGICA SALVATAGGIO HEATMAP SU DRIVE ===
@@ -479,8 +484,8 @@ def main():
     file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) + '\n'))
     file.write(('    AUPRC score with RbA:' + str(prc_auc_rba*100.0) + '   FPR@TPR95 with RbA:' + str(fpr_rba*100.0) + '\n'))
     # --- Sweep temperatura MSP: AUPRC/FPR per ogni T, stampa + CSV per scegliere la T globale ---
-    valid_mask = ood_mask | ind_mask
-    val_label_sweep = ood_gts[valid_mask]
+    # Uso le liste di soli pixel validi accumulate sopra (1D), niente mappe intere in RAM.
+    val_label_sweep = np.concatenate(temp_label_list)   # label 0/1 dei pixel validi
     dataset_name = _dataset_name_from_input(args.input[0])
     print(f"\n=== Temperature sweep (MSP) - dataset: {dataset_name} ===")
     csv_path = "temp_sweep.csv"
@@ -489,7 +494,7 @@ def main():
         if write_header:
             csv_f.write("dataset,T,AUPRC,FPR\n")
         for t in TEMPS:
-            scores_t = np.array(anomaly_score_temp_lists[t])[valid_mask]
+            scores_t = np.concatenate(anomaly_score_temp_lists[t])   # solo pixel validi (float16)
             auprc_t = average_precision_score(val_label_sweep, scores_t) * 100.0
             fpr_t = fpr_at_95_tpr(scores_t, val_label_sweep) * 100.0
             print(f'  T={t:<4}  AUPRC={auprc_t:6.2f}  FPR={fpr_t:6.2f}  (AUPRC-FPR={auprc_t - fpr_t:7.2f})')
