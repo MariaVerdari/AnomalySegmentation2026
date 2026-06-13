@@ -369,15 +369,23 @@ def main():
         if 1 not in np.unique(ood_gts): # se non ci sono anomalie passa alla foto dopo
             continue              
         else:  #altrimenti salva i risultati
-             ood_gts_list.append(ood_gts)  # aggiunge alla lista ground truth
-             anomaly_score_msp_list.append(anomaly_msp_result) # aggunge alla lista dei punteggi di anomalia
-             anomaly_score_maxentropy_list.append(anomaly_entropy_result) # aggiunge alla lista dei punteggi di anomalia con entropia
-             anomaly_score_maxlogit_list.append(anomaly_maxlogit_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
-             anomaly_score_rba_list.append(anomaly_rba_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
-             # tengo solo i pixel validi (0/1) in float32: poca RAM (scarto i 255 e niente
-             # mappe intere) ma precisione piena -> T=1.0 coincide con l'MSP base.
+             # === VECCHIO ACCUMULO (mappe intere) — commentato per eventuale ripristino ===
+             # ood_gts_list.append(ood_gts)
+             # anomaly_score_msp_list.append(anomaly_msp_result)
+             # anomaly_score_maxentropy_list.append(anomaly_entropy_result)
+             # anomaly_score_maxlogit_list.append(anomaly_maxlogit_result)
+             # anomaly_score_rba_list.append(anomaly_rba_result)
+
+             # Tengo solo i pixel validi (0/1) in float32, per TUTTI i metodi (base + sweep):
+             # poca RAM (scarto i pixel 255 e niente mappe intere a piena risoluzione),
+             # numeri identici a prima. Indispensabile sui dataset grandi (es. LostFound).
              valid_sweep = (ood_gts == 0) | (ood_gts == 1)
+             ood_gts_list.append(None)  # serve solo a contare le immagini tenute (heatmap sotto)
              temp_label_list.append(ood_gts[valid_sweep].astype(np.uint8))
+             anomaly_score_msp_list.append(anomaly_msp_result[valid_sweep].astype(np.float32))
+             anomaly_score_maxentropy_list.append(anomaly_entropy_result[valid_sweep].astype(np.float32))
+             anomaly_score_maxlogit_list.append(anomaly_maxlogit_result[valid_sweep].astype(np.float32))
+             anomaly_score_rba_list.append(anomaly_rba_result[valid_sweep].astype(np.float32))
              for t in temps_to_use:
                  anomaly_score_temp_lists[t].append(msp_temp_results[t][valid_sweep].astype(np.float32))
 
@@ -426,6 +434,9 @@ def main():
 
     file.write( "\n")
 
+    # === VECCHIO SCHEMA (mappe intere + maschera) — tenuto commentato per eventuale ripristino.
+    # NB: per riattivarlo va ripristinato anche l'accumulo delle mappe intere (vedi sopra). ===
+    '''
     ood_gts = np.array(ood_gts_list)
     anomaly_scores_msp = np.array(anomaly_score_msp_list)
     anomaly_scores_maxentropy = np.array(anomaly_score_maxentropy_list)
@@ -433,7 +444,7 @@ def main():
     anomaly_scores_rba = np.array(anomaly_score_rba_list)
 
     # crea maschere per fare distinzione tra pixel anomali e normali, e per escludere quelli off topic (255)
-    ood_mask = (ood_gts == 1)  
+    ood_mask = (ood_gts == 1)
     ind_mask = (ood_gts == 0) # anche 255 viene 0
 
     # divide quindi in due arrays1D in base a queste maschere, quello che era una matrice diventa due arrays, per tutti e tre i metodi
@@ -457,8 +468,8 @@ def main():
     ind_label_maxlogit = np.zeros(len(ind_out_maxlogit))
     ind_label_rba = np.zeros(len(ind_out_rba))
 
-    val_out_msp = np.concatenate((ind_out_msp, ood_out_msp)) # unisce i due arrays dei punteggi di anomalia, prima quelli normali poi quelli anomali (le nostre predizioni)
-    val_label_msp = np.concatenate((ind_label_msp, ood_label_msp)) # unisce i due arrays delle label, prima 0 poi 1 (la verità)
+    val_out_msp = np.concatenate((ind_out_msp, ood_out_msp))
+    val_label_msp = np.concatenate((ind_label_msp, ood_label_msp))
     val_out_maxentropy = np.concatenate((ind_out_maxentropy, ood_out_maxentropy))
     val_label_maxentropy = np.concatenate((ind_label_maxentropy, ood_label_maxentropy))
     val_out_maxlogit = np.concatenate((ind_out_maxlogit, ood_out_maxlogit))
@@ -466,15 +477,35 @@ def main():
     val_out_rba = np.concatenate((ind_out_rba, ood_out_rba))
     val_label_rba = np.concatenate((ind_label_rba, ood_label_rba))
 
-    prc_auc_msp = average_precision_score(val_label_msp, val_out_msp) # AUPRC: precisione nel trovare le anomalie per msp
+    prc_auc_msp = average_precision_score(val_label_msp, val_out_msp)
     prc_auc_maxentropy = average_precision_score(val_label_maxentropy, val_out_maxentropy)
     prc_auc_maxlogit = average_precision_score(val_label_maxlogit, val_out_maxlogit)
     prc_auc_rba = average_precision_score(val_label_rba, val_out_rba)
 
-    fpr_msp = fpr_at_95_tpr(val_out_msp, val_label_msp) #FPR95 per msp
+    fpr_msp = fpr_at_95_tpr(val_out_msp, val_label_msp)
     fpr_maxentropy = fpr_at_95_tpr(val_out_maxentropy, val_label_maxentropy)
     fpr_maxlogit = fpr_at_95_tpr(val_out_maxlogit, val_label_maxlogit)
     fpr_rba = fpr_at_95_tpr(val_out_rba, val_label_rba)
+    '''
+
+    # === NUOVO SCHEMA: punteggi già ristretti ai soli pixel validi (0/1) in float32 -> concateno 1D.
+    # Risultato IDENTICO al vecchio (stessi pixel), ma con molta meno RAM (niente mappe intere,
+    # i pixel 255 scartati in accumulo). Indispensabile sui dataset grandi (es. LostFound). ===
+    val_label = np.concatenate(temp_label_list)   # ground truth 0/1 dei pixel validi
+    val_out_msp = np.concatenate(anomaly_score_msp_list)
+    val_out_maxentropy = np.concatenate(anomaly_score_maxentropy_list)
+    val_out_maxlogit = np.concatenate(anomaly_score_maxlogit_list)
+    val_out_rba = np.concatenate(anomaly_score_rba_list)
+
+    prc_auc_msp = average_precision_score(val_label, val_out_msp)
+    prc_auc_maxentropy = average_precision_score(val_label, val_out_maxentropy)
+    prc_auc_maxlogit = average_precision_score(val_label, val_out_maxlogit)
+    prc_auc_rba = average_precision_score(val_label, val_out_rba)
+
+    fpr_msp = fpr_at_95_tpr(val_out_msp, val_label)
+    fpr_maxentropy = fpr_at_95_tpr(val_out_maxentropy, val_label)
+    fpr_maxlogit = fpr_at_95_tpr(val_out_maxlogit, val_label)
+    fpr_rba = fpr_at_95_tpr(val_out_rba, val_label)
 
     # printa nei result e nel terminale i risultati
     print(f'AUPRC score with MSP: {prc_auc_msp*100.0}')
@@ -493,12 +524,8 @@ def main():
 
     # Libero la RAM dei metodi base (mappe intere a piena risoluzione + array 1D): non
     # servono più, e tenerli durante lo sweep raddoppiava il picco di memoria -> OOM.
-    del anomaly_scores_msp, anomaly_scores_maxentropy, anomaly_scores_maxlogit, anomaly_scores_rba
-    del anomaly_score_msp_list, anomaly_score_maxentropy_list, anomaly_score_maxlogit_list, anomaly_score_rba_list
-    del ood_gts, ood_gts_list, ood_mask, ind_mask
-    del ood_out_msp, ood_out_maxentropy, ood_out_maxlogit, ood_out_rba
-    del ind_out_msp, ind_out_maxentropy, ind_out_maxlogit, ind_out_rba
     del val_out_msp, val_out_maxentropy, val_out_maxlogit, val_out_rba
+    del anomaly_score_msp_list, anomaly_score_maxentropy_list, anomaly_score_maxlogit_list, anomaly_score_rba_list
     gc.collect()
 
     # --- Sweep temperatura MSP: AUPRC/FPR per ogni T, stampa + CSV per scegliere la T globale ---
