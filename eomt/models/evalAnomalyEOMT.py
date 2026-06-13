@@ -21,6 +21,7 @@ import torch.nn.functional as F
 #from models.vit import ViT
 from vit import ViT
 import math
+import gc
 
 
 
@@ -484,8 +485,19 @@ def main():
     file.write(('    AUPRC score with MaxEntropy:' + str(prc_auc_maxentropy*100.0) + '   FPR@TPR95 with MaxEntropy:' + str(fpr_maxentropy*100.0) + '\n'))
     file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) + '\n'))
     file.write(('    AUPRC score with RbA:' + str(prc_auc_rba*100.0) + '   FPR@TPR95 with RbA:' + str(fpr_rba*100.0) + '\n'))
+
+    # Libero la RAM dei metodi base (mappe intere a piena risoluzione + array 1D): non
+    # servono più, e tenerli durante lo sweep raddoppiava il picco di memoria -> OOM.
+    del anomaly_scores_msp, anomaly_scores_maxentropy, anomaly_scores_maxlogit, anomaly_scores_rba
+    del anomaly_score_msp_list, anomaly_score_maxentropy_list, anomaly_score_maxlogit_list, anomaly_score_rba_list
+    del ood_gts, ood_gts_list, ood_mask, ind_mask
+    del ood_out_msp, ood_out_maxentropy, ood_out_maxlogit, ood_out_rba
+    del ind_out_msp, ind_out_maxentropy, ind_out_maxlogit, ind_out_rba
+    del val_out_msp, val_out_maxentropy, val_out_maxlogit, val_out_rba
+    gc.collect()
+
     # --- Sweep temperatura MSP: AUPRC/FPR per ogni T, stampa + CSV per scegliere la T globale ---
-    # Uso le liste di soli pixel validi accumulate sopra (1D), niente mappe intere in RAM.
+    # Liste di soli pixel validi (1D); libero ogni temperatura subito dopo averla usata.
     val_label_sweep = np.concatenate(temp_label_list)   # label 0/1 dei pixel validi
     dataset_name = _dataset_name_from_input(args.input[0])
     print(f"\n=== Temperature sweep (MSP) - dataset: {dataset_name} ===")
@@ -495,9 +507,12 @@ def main():
         if write_header:
             csv_f.write("dataset,T,AUPRC,FPR\n")
         for t in TEMPS:
-            scores_t = np.concatenate(anomaly_score_temp_lists[t])   # solo pixel validi (float16)
+            scores_t = np.concatenate(anomaly_score_temp_lists[t])   # solo pixel validi (float32)
+            anomaly_score_temp_lists[t] = None   # libero la lista accumulata di questa T
             auprc_t = average_precision_score(val_label_sweep, scores_t) * 100.0
             fpr_t = fpr_at_95_tpr(scores_t, val_label_sweep) * 100.0
+            del scores_t
+            gc.collect()
             print(f'  T={t:<4}  AUPRC={auprc_t:6.2f}  FPR={fpr_t:6.2f}  (AUPRC-FPR={auprc_t - fpr_t:7.2f})')
             file.write(f'    MSP (T={t}):  AUPRC:{auprc_t}   FPR@TPR95:{fpr_t}\n')
             csv_f.write(f"{dataset_name},{t},{auprc_t},{fpr_t}\n")
