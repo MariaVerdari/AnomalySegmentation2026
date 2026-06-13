@@ -41,7 +41,7 @@ torch.backends.cudnn.benchmark = True
 
 input_transform = Compose(
     [
-        Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
+        Resize((1024, 1024), Image.BILINEAR), # 1024x1024: risoluzione nativa di EoMT (coerente con training, mIoU ed estensione)
         ToTensor() # trasforma in tensore e mette (Canali, Altezza, Larghezza)
         #Normalize([.485, .456, .406], [.229, .224, .225]), 
     ]
@@ -49,7 +49,7 @@ input_transform = Compose(
 
 target_transform = Compose( #trasforamzioni per la label
     [
-        Resize((512, 1024), Image.NEAREST),
+        Resize((1024, 1024), Image.NEAREST),
     ]
 )
 
@@ -102,8 +102,8 @@ def main():
 
     #AGGIUNTA ENCODER
     encoder = ViT(
-        img_size=(512, 1024),   
-        patch_size=16,          
+        img_size=(1024, 1024),   # risoluzione nativa di EoMT (griglia 64x64 = pos_embed del checkpoint, nessuna interpolazione)
+        patch_size=16,
         backbone_name="vit_base_patch14_reg4_dinov2"    )
 
 
@@ -194,9 +194,10 @@ def main():
                         # Calcoliamo la griglia originale (radice quadrata di 4096 = 64)
                         orig_size = int(param.shape[1] ** 0.5) 
                         
-                        # Sappiamo che le nostre immagini sono 512x1024 e patch è 16
-                        H_new = 512 // 16  # 32
-                        W_new = 1024 // 16 # 64
+                        # Immagini a 1024x1024 e patch 16 -> griglia 64x64 (combacia col checkpoint:
+                        # questo ramo non scatta più, ma resta corretto se si cambia risoluzione)
+                        H_new = 1024 // 16  # 64
+                        W_new = 1024 // 16  # 64
                         
                         # Trasformiamo la sequenza 1D in un'immagine 2D per poterla ridimensionare
                         param_reshaped = param.reshape(1, orig_size, orig_size, dim).permute(0, 3, 1, 2)
@@ -280,8 +281,8 @@ def main():
 
             result = torch.einsum("bqc, bqhw -> bchw", class_probs, mask_probs) # combino le maschere e le classi facendo moltiplicazione tra matrici
 
-            # result sarà [1, 20, 512, 1024] 
-            result = F.interpolate(result, size=(512, 1024), mode="bilinear", align_corners=False) # si fa in modo che le misure siano quelle che abbiamo messo in input_transform e target_trasform
+            # result sarà [1, 20, 1024, 1024]
+            result = F.interpolate(result, size=(1024, 1024), mode="bilinear", align_corners=False) # stessa risoluzione di input_transform e target_transform
             
         
 
