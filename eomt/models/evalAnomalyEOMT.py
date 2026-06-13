@@ -368,11 +368,12 @@ def main():
              anomaly_score_maxentropy_list.append(anomaly_entropy_result) # aggiunge alla lista dei punteggi di anomalia con entropia
              anomaly_score_maxlogit_list.append(anomaly_maxlogit_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
              anomaly_score_rba_list.append(anomaly_rba_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
-             # tengo solo i pixel validi (0/1) e in float16: poca RAM, tutte le temperature
+             # tengo solo i pixel validi (0/1) in float32: poca RAM (scarto i 255 e niente
+             # mappe intere) ma precisione piena -> T=1.0 coincide con l'MSP base.
              valid_sweep = (ood_gts == 0) | (ood_gts == 1)
              temp_label_list.append(ood_gts[valid_sweep].astype(np.uint8))
              for t in TEMPS:
-                 anomaly_score_temp_lists[t].append(msp_temp_results[t][valid_sweep].astype(np.float16))
+                 anomaly_score_temp_lists[t].append(msp_temp_results[t][valid_sweep].astype(np.float32))
 
    
              # === LOGICA SALVATAGGIO HEATMAP SU DRIVE ===
