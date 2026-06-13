@@ -27,6 +27,20 @@ NUM_CLASSES = 20 #di cityescape 19 + 1
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
+# Griglia di temperature per lo sweep di MSP (per scegliere una T globale).
+TEMPS = [0.5, 0.75, 1.0, 1.1, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+
+
+def _dataset_name_from_input(input_glob):
+    # ".../RoadObsticle21/images/*.webp" -> "RoadObsticle21"
+    parts = str(input_glob).replace("\\", "/").split("/")
+    if "images" in parts:
+        i = parts.index("images")
+        if i > 0:
+            return parts[i - 1]
+    return "dataset"
+
+
 input_transform = Compose(
     [
         Resize((512, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
@@ -70,9 +84,10 @@ def main():
     anomaly_score_msp_list = [] # punteggi di anomalia con msp
     anomaly_score_maxentropy_list = [] # punteggi di anomalia calcolati con l'entropia
     anomaly_score_maxlogit_list = [] # punteggi di anomalia calcolati con maxlogit
-    anomaly_score_msp_temp_05_list = [] # punteggi di anomalia con msp e temperature scaling 0.5
-    anomaly_score_msp_temp_075_list = [] # punteggi di anomalia con msp e temperature scaling 0.75
-    anomaly_score_msp_temp_11_list = [] # punteggi di anomalia  con msp e temperature scaling 1.1   
+    # Sweep temperatura per MSP: per ogni T salvo SOLO i pixel validi (1D, float16),
+    # non le mappe intere -> RAM bassa, posso tenere molte temperature senza OOM.
+    anomaly_score_temp_lists = {t: [] for t in TEMPS}
+    temp_label_list = []  # label 0/1 dei pixel validi, allineate alle liste sopra
 
     ood_gts_list = [] # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
 
@@ -131,14 +146,11 @@ def main():
         #calcolo il maxentropy su soft_result
         anomaly_entropy_result = - np.sum(soft_result.squeeze(0).data.cpu().numpy() * np.log(soft_result.squeeze(0).data.cpu().numpy() + 1e-10), axis=0) # entropia calcolata sui softmax
 
-        #calcolo temperature scaling per msp
-        temperature = [0.5,0.75,1.1]
-        scaled_soft_result = torch.softmax(result / temperature[0], dim=1)
-        anomaly_msp_result_temp_05 = 1.0 - np.max(scaled_soft_result.squeeze(0).data.cpu().numpy(), axis=0)  
-        scaled_soft_result = torch.softmax(result / temperature[1], dim=1)
-        anomaly_msp_result_temp_075 = 1.0 - np.max(scaled_soft_result.squeeze(0).data.cpu().numpy(), axis=0)  
-        scaled_soft_result = torch.softmax(result / temperature[2], dim=1)
-        anomaly_msp_result_temp_11 = 1.0 - np.max(scaled_soft_result.squeeze(0).data.cpu().numpy(), axis=0)  
+        # temperature scaling per MSP: una mappa MSP per ogni T della griglia (un solo forward)
+        msp_temp_results = {}
+        for t in TEMPS:
+            scaled_soft_result = torch.softmax(result / t, dim=1)
+            msp_temp_results[t] = 1.0 - np.max(scaled_soft_result.squeeze(0).data.cpu().numpy(), axis=0)
         
 
 
@@ -175,11 +187,13 @@ def main():
              anomaly_score_msp_list.append(anomaly_msp_result) # aggunge alla lista dei punteggi di anomalia
              anomaly_score_maxentropy_list.append(anomaly_entropy_result) # aggiunge alla lista dei punteggi di anomalia con entropia
              anomaly_score_maxlogit_list.append(anomaly_maxlogit_result) # aggiunge alla lista dei punteggi di anomalia con maxlogit
-             anomaly_score_msp_temp_05_list.append(anomaly_msp_result_temp_05) # aggiunge alla lista dei punteggi di anomalia con msp e temperature scaling 0.5
-             anomaly_score_msp_temp_075_list.append(anomaly_msp_result_temp_075) # aggiunge alla lista dei punteggi di anomalia con msp e temperature scaling 0.75
-             anomaly_score_msp_temp_11_list.append(anomaly_msp_result_temp_11) # aggiunge alla lista dei punteggi di anomalia con msp e temperature scaling 1.1
+             # tengo solo i pixel validi (0/1) e in float16: poca RAM, tutte le temperature
+             valid_sweep = (ood_gts == 0) | (ood_gts == 1)
+             temp_label_list.append(ood_gts[valid_sweep].astype(np.uint8))
+             for t in TEMPS:
+                 anomaly_score_temp_lists[t].append(msp_temp_results[t][valid_sweep].astype(np.float16))
 
-        del result, anomaly_msp_result, anomaly_entropy_result, anomaly_maxlogit_result, anomaly_msp_result_temp_05, anomaly_msp_result_temp_075, anomaly_msp_result_temp_11, ood_gts, mask  # libera memoria una volta salvate le info
+        del result, anomaly_msp_result, anomaly_entropy_result, anomaly_maxlogit_result, msp_temp_results, ood_gts, mask  # libera memoria una volta salvate le info
         torch.cuda.empty_cache()
 
     file.write( "\n")
@@ -188,9 +202,6 @@ def main():
     anomaly_scores_msp = np.array(anomaly_score_msp_list)
     anomaly_scores_maxentropy = np.array(anomaly_score_maxentropy_list)
     anomaly_scores_maxlogit = np.array(anomaly_score_maxlogit_list)
-    anomaly_scores_msp_temp_05 = np.array(anomaly_score_msp_temp_05_list)
-    anomaly_scores_msp_temp_075 = np.array(anomaly_score_msp_temp_075_list)
-    anomaly_scores_msp_temp_11 = np.array(anomaly_score_msp_temp_11_list)
 
     # crea maschere per fare distinzione tra pixel anomali e normali, e per escludere gli altri (255)
     ood_mask = (ood_gts == 1)  
@@ -200,30 +211,18 @@ def main():
     ood_out_msp = anomaly_scores_msp[ood_mask]
     ood_out_maxentropy = anomaly_scores_maxentropy[ood_mask]
     ood_out_maxlogit = anomaly_scores_maxlogit[ood_mask]
-    ood_out_msp_temp_05 = anomaly_scores_msp_temp_05[ood_mask]
-    ood_out_msp_temp_075 = anomaly_scores_msp_temp_075[ood_mask]
-    ood_out_msp_temp_11 = anomaly_scores_msp_temp_11[ood_mask]
 
     ind_out_msp = anomaly_scores_msp[ind_mask]
     ind_out_maxentropy = anomaly_scores_maxentropy[ind_mask]
     ind_out_maxlogit = anomaly_scores_maxlogit[ind_mask]
-    ind_out_msp_temp_05 = anomaly_scores_msp_temp_05[ind_mask]
-    ind_out_msp_temp_075 = anomaly_scores_msp_temp_075[ind_mask]
-    ind_out_msp_temp_11 = anomaly_scores_msp_temp_11[ind_mask]
 
     ood_label_msp = np.ones(len(ood_out_msp)) # arrays di 1 per i pixel anomali
     ood_label_maxentropy = np.ones(len(ood_out_maxentropy)) 
     ood_label_maxlogit = np.ones(len(ood_out_maxlogit))
-    ood_label_msp_temp_05 = np.ones(len(ood_out_msp_temp_05))
-    ood_label_msp_temp_075 = np.ones(len(ood_out_msp_temp_075))
-    ood_label_msp_temp_11 = np.ones(len(ood_out_msp_temp_11)) 
 
     ind_label_msp = np.zeros(len(ind_out_msp)) # arrays di 0 per i pixel normali
     ind_label_maxentropy = np.zeros(len(ind_out_maxentropy)) 
-    ind_label_maxlogit = np.zeros(len(ind_out_maxlogit)) 
-    ind_label_msp_temp_05 = np.zeros(len(ind_out_msp_temp_05))
-    ind_label_msp_temp_075 = np.zeros(len(ind_out_msp_temp_075))
-    ind_label_msp_temp_11 = np.zeros(len(ind_out_msp_temp_11))
+    ind_label_maxlogit = np.zeros(len(ind_out_maxlogit))
 
     val_out_msp = np.concatenate((ind_out_msp, ood_out_msp)) # unisce i due arrays dei punteggi di anomalia, prima quelli normali poi quelli anomali (le predizioni)
     val_label_msp = np.concatenate((ind_label_msp, ood_label_msp)) # unisce i due arrays delle label, prima 0 poi 1 (la verità)
@@ -231,26 +230,14 @@ def main():
     val_label_maxentropy = np.concatenate((ind_label_maxentropy, ood_label_maxentropy))
     val_out_maxlogit = np.concatenate((ind_out_maxlogit, ood_out_maxlogit))
     val_label_maxlogit = np.concatenate((ind_label_maxlogit, ood_label_maxlogit))
-    val_out_msp_temp_05 = np.concatenate((ind_out_msp_temp_05, ood_out_msp_temp_05))
-    val_label_msp_temp_05 = np.concatenate((ind_label_msp_temp_05, ood_label_msp_temp_05))
-    val_out_msp_temp_075 = np.concatenate((ind_out_msp_temp_075, ood_out_msp_temp_075))
-    val_label_msp_temp_075 = np.concatenate((ind_label_msp_temp_075, ood_label_msp_temp_075))
-    val_out_msp_temp_11 = np.concatenate((ind_out_msp_temp_11, ood_out_msp_temp_11))
-    val_label_msp_temp_11 = np.concatenate((ind_label_msp_temp_11, ood_label_msp_temp_11))
 
     prc_auc_msp = average_precision_score(val_label_msp, val_out_msp) # AUPRC: precisione nel trovare le anomalie per msp
     prc_auc_maxentropy = average_precision_score(val_label_maxentropy, val_out_maxentropy)
-    prc_auc_maxlogit = average_precision_score(val_label_maxlogit, val_out_maxlogit)   
-    prc_auc_msp_temp_05 = average_precision_score(val_label_msp_temp_05, val_out_msp_temp_05)     
-    prc_auc_msp_temp_075 = average_precision_score(val_label_msp_temp_075, val_out_msp_temp_075)
-    prc_auc_msp_temp_11 = average_precision_score(val_label_msp_temp_11, val_out_msp_temp_11)
+    prc_auc_maxlogit = average_precision_score(val_label_maxlogit, val_out_maxlogit)
 
     fpr_msp = fpr_at_95_tpr(val_out_msp, val_label_msp) #FPR95 per msp
     fpr_maxentropy = fpr_at_95_tpr(val_out_maxentropy, val_label_maxentropy)
     fpr_maxlogit = fpr_at_95_tpr(val_out_maxlogit, val_label_maxlogit)
-    fpr_msp_temp_05 = fpr_at_95_tpr(val_out_msp_temp_05, val_label_msp_temp_05)
-    fpr_msp_temp_075 = fpr_at_95_tpr(val_out_msp_temp_075, val_label_msp_temp_075)
-    fpr_msp_temp_11 = fpr_at_95_tpr(val_out_msp_temp_11, val_label_msp_temp_11)
 
     # print dei risultati nei result e nel terminale
     print(f'AUPRC score with MSP: {prc_auc_msp*100.0}')
@@ -259,19 +246,28 @@ def main():
     print(f'FPR@TPR95 with MaxEntropy: {fpr_maxentropy*100.0}')
     print(f'AUPRC score with MaxLogit: {prc_auc_maxlogit*100.0}')
     print(f'FPR@TPR95 with MaxLogit: {fpr_maxlogit*100.0}')
-    print(f'AUPRC score with MSP (temp=0.5): {prc_auc_msp_temp_05*100.0}')
-    print(f'FPR@TPR95 with MSP (temp=0.5): {fpr_msp_temp_05*100.0}')
-    print(f'AUPRC score with MSP (temp=0.75): {prc_auc_msp_temp_075*100.0}')
-    print(f'FPR@TPR95 with MSP (temp=0.75): {fpr_msp_temp_075*100.0}')
-    print(f'AUPRC score with MSP (temp=1.1): {prc_auc_msp_temp_11*100.0}')
-    print(f'FPR@TPR95 with MSP (temp=1.1): {fpr_msp_temp_11*100.0}')
 
     file.write(('    AUPRC score with MSP:' + str(prc_auc_msp*100.0) + '   FPR@TPR95 with MSP:' + str(fpr_msp*100.0) )) 
     file.write(('    AUPRC score with MaxEntropy:' + str(prc_auc_maxentropy*100.0) + '   FPR@TPR95 with MaxEntropy:' + str(fpr_maxentropy*100.0) )) 
     file.write(('    AUPRC score with MaxLogit:' + str(prc_auc_maxlogit*100.0) + '   FPR@TPR95 with MaxLogit:' + str(fpr_maxlogit*100.0) )) 
-    file.write(('    AUPRC score with MSP (temp=0.5):' + str(prc_auc_msp_temp_05*100.0) + '   FPR@TPR95 with MSP (temp=0.5):' + str(fpr_msp_temp_05*100.0) )) 
-    file.write(('    AUPRC score with MSP (temp=0.75):' + str(prc_auc_msp_temp_075*100.0) + '   FPR@TPR95 with MSP (temp=0.75):' + str(fpr_msp_temp_075*100.0) )) 
-    file.write(('    AUPRC score with MSP (temp=1.1):' + str(prc_auc_msp_temp_11*100.0) + '   FPR@TPR95 with MSP (temp=1.1):' + str(fpr_msp_temp_11*100.0) )) 
+    # --- Sweep temperatura MSP: AUPRC/FPR per ogni T, stampa + CSV per scegliere la T globale ---
+    # Uso le liste di soli pixel validi accumulate sopra (1D), niente mappe intere in RAM.
+    val_label_sweep = np.concatenate(temp_label_list)   # label 0/1 dei pixel validi
+    dataset_name = _dataset_name_from_input(args.input[0])
+    print(f"\n=== Temperature sweep (MSP) - dataset: {dataset_name} ===")
+    csv_path = "temp_sweep_erfnet.csv"
+    write_header = not os.path.exists(csv_path)
+    with open(csv_path, "a") as csv_f:
+        if write_header:
+            csv_f.write("dataset,T,AUPRC,FPR\n")
+        for t in TEMPS:
+            scores_t = np.concatenate(anomaly_score_temp_lists[t])   # solo pixel validi (float16)
+            auprc_t = average_precision_score(val_label_sweep, scores_t) * 100.0
+            fpr_t = fpr_at_95_tpr(scores_t, val_label_sweep) * 100.0
+            print(f'  T={t:<4}  AUPRC={auprc_t:6.2f}  FPR={fpr_t:6.2f}  (AUPRC-FPR={auprc_t - fpr_t:7.2f})')
+            file.write(f'    MSP (T={t}):  AUPRC:{auprc_t}   FPR@TPR95:{fpr_t}\n')
+            csv_f.write(f"{dataset_name},{t},{auprc_t},{fpr_t}\n")
+
     file.close()
 
 

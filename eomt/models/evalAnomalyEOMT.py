@@ -41,7 +41,7 @@ torch.backends.cudnn.benchmark = True
 
 # Griglia di temperature per lo sweep di MSP (per scegliere una T globale).
 # Dai risultati precedenti l'effetto è piccolo e T>1 aiuta più di T<1.
-TEMPS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+TEMPS = [0.5, 0.75, 1.0, 1.1, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
 
 def _dataset_name_from_input(input_glob):
