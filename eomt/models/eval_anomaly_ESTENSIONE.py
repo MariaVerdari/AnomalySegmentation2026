@@ -118,8 +118,22 @@ def main():
 
         if args.score == 'mahalanobis':
             #PER UNICA MAT VARCOV
-            cov_globale = statistiche["cov_globale"].to(device)
-            Sigma_inv = torch.linalg.pinv(cov_globale)  # una sola inversione
+            #cov_globale = statistiche["cov_globale"].to(device)
+            #Sigma_inv = torch.linalg.pinv(cov_globale)  # una sola inversione
+
+
+            # PER UNA MAT COV PER OGNI CLASSE 
+            covarianze = statistiche["covarianze"] #dizionario
+    
+            matrici_inverse = {} #dizionario    
+
+            for cls_id in range(NUM_CLASSES):
+
+                #  pinv (Pseudo-inversa) per evitare crash per matrici singolari
+                matrici_inverse[cls_id] = torch.linalg.pinv(covarianze[cls_id].to(device))
+                prototipi[cls_id] = prototipi[cls_id].to(device)
+
+    
 
     # prototipi appresi per lo score pans: pesi del cosine head, no-object esclusa
     net = model.module if isinstance(model, torch.nn.DataParallel) else model
@@ -127,21 +141,7 @@ def main():
 
 
     
-    '''
-    # PER UNA MAT COV PER OGNI CLASSE 
-    covarianze = statistiche["covarianze"] #dizionario
-     
-    matrici_inverse = {} #dizionario
-
-    
-
-    for cls_id in range(NUM_CLASSES):
-
-        #  pinv (Pseudo-inversa) per evitare crash per matrici singolari
-        matrici_inverse[cls_id] = torch.linalg.pinv(covarianze[cls_id].to(device))
-        prototipi[cls_id] = prototipi[cls_id].to(device)
-
-    '''
+   
     
     ood_gts_list = []  # MEMORIZZA "Ground Truth" ovvero la verità assoluta delle anomalie
     anomaly_score_mahalanobis_list = [] # lista con score di anomalie 
@@ -209,8 +209,8 @@ def main():
 
                     #MAHALNOBIS
                     delta = q_vec - prototipi[cls_id]
-                    #d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
-                    d_sq = torch.dot(delta, torch.matmul(Sigma_inv, delta))
+                    d_sq = torch.dot(delta, torch.matmul(matrici_inverse[cls_id], delta))
+                    #d_sq = torch.dot(delta, torch.matmul(Sigma_inv, delta))
 
 
 
