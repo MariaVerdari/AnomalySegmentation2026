@@ -1,4 +1,4 @@
-# per ogni classe tiriamo fuori matrice var cov e media delle queries
+# calcolo media (prototipo) per ogni classe e matrice di covarianza globale per tutto il dataset
 
 
 
@@ -20,7 +20,7 @@ from vit import ViT
 
 SEED = 42
 NUM_CLASSES = 19
-CONFIDENCE_THRESHOLD = 0.7  # Ignoriamo le query con probabilità inferiore al 70%
+CONFIDENCE_THRESHOLD = 0.7  # ignoriamo le query con probabilità inferiore al 70%
 
 random.seed(SEED)
 np.random.seed(SEED)
@@ -79,7 +79,7 @@ def main():
     vettori_per_classe = {i: [] for i in range(NUM_CLASSES)} #dizionario di liste
     search_pattern = os.path.join(args.datadir, "leftImg8bit", "*", "*", "*.png")
     image_paths = glob.glob(search_pattern)
-    # Se la cartella è piatta o strutturata diversamente, usiamo un piano B di ricerca ricorsiva
+    # Se la cartella è piatta o strutturata diversamente, usiamo ricerca ricorsiva
     if len(image_paths) == 0:
         search_pattern_flat = os.path.join(args.datadir, "**", "*.png")
         image_paths = glob.glob(search_pattern_flat, recursive=True)
@@ -96,7 +96,7 @@ def main():
             if not args.cpu:
                 images = images.cuda()
 
-            # Estrazione feature dal modello (Gestione DataParallel)
+            # estrazione feature dal modello (gestione DataParallel)
             if isinstance(model, torch.nn.DataParallel):  #parallelizza se si può
                 updated_queries, _, class_logits_list = model.module(images) #passa immagini a modello originale
             else:
@@ -104,19 +104,19 @@ def main():
             
 
 
-            # Logit dell'ultimo layer
+            # logit dell'ultimo layer
             class_logits = class_logits_list[-1]  # [Batch, Queries, Num_Classes + 1]
 
             class_probs = torch.softmax(class_logits, dim=-1) # diventano probabilità  [Batch, Queries, Num_Classes + 1]
 
             max_probs, pred_classes = torch.max(class_probs, dim=-1)  #max_probs è la probabilità massima, pred_classes è la classe predetta [Batch, Queries]
 
-            # Rimuoviamo la dimensione batch 
+            # rimuoviamo la dimensione batch 
             updated_queries = updated_queries.squeeze(0) # da [Batch, Queries, lunghezza queries] a [Queries, lunghezza queries]
             max_probs = max_probs.squeeze(0)  # da [Batch, Queries] a  [Queries]      
             pred_classes = pred_classes.squeeze(0)   # da [Batch, Queries] a  [Queries]        
 
-            # Smistamento vettori nelle rispettive classi
+            # smistamento vettori nelle rispettive classi
             for cls_id in range(NUM_CLASSES):  # non prende il void
                 valid_mask = (pred_classes == cls_id) & (max_probs > CONFIDENCE_THRESHOLD) 
                 cls_queries = updated_queries[valid_mask] # prende queries che hanno come classe predetta la classe in questione e hanno una probabilità superiore alla soglia
@@ -143,11 +143,11 @@ def main():
         if len(vettori_per_classe[cls_id]) > 0: #se c'è almeno una queries nella lista della classe
             tutti_i_vettori.append(torch.cat(vettori_per_classe[cls_id], dim=0))
 
-            # Unione di tutti i vettori della classe
+            # unione di tutti i vettori della classe
             matrice_totale = torch.cat(vettori_per_classe[cls_id], dim=0) #diventa tensore bidimensionale [Queries selezionate, lunghezza queries] 
             N = matrice_totale.shape[0] #numero queries totali per classe
             
-            # Calcolo Media (Prototipo)
+            # calcolo Media (Prototipo)
             media = torch.mean(matrice_totale, dim=0) # vettore [lunghezza queries] 
 
             '''
@@ -186,7 +186,7 @@ def main():
     torch.save({
         "prototipi": prototipi,
         "covarianze": covarianze,
-        "cov_globale": cov_globale   # ← aggiunta
+        "cov_globale": cov_globale   
     }, args.prototypes_file)
 
     print(f"\nStatistiche salvate con successo in: {args.prototypes_file}")

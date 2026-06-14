@@ -1,4 +1,4 @@
-# da immagini di dataset con anomalie estraggo le queries e calcolo la distanza con medeie e matrice di covarianze calcolate su cityscapes
+# da immagini di dataset con anomalie estraggo le queries e calcolo la distanza con medie e matrice di covarianze calcolate su cityscapes
 
 import os
 import glob
@@ -33,14 +33,14 @@ torch.backends.cudnn.benchmark = True
 input_transform = Compose(
     [
         Resize((1024, 1024), Image.BILINEAR), # bilinear è metodo di interpolazione per nuovi pixel quando faccio resize
-        ToTensor() # trasforma in tenosore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
+        ToTensor() # trasforma in tensore e valori diventano intervallo 0 1, e mette (Canali, Altezza, Larghezza)
         #Normalize([.485, .456, .406], [.229, .224, .225]), # normalizzazione per non so quale dataset
     ]
 )
 
-target_transform = Compose( #trasforamzioni per l'etichetta
+target_transform = Compose( #trasforamzioni per l'etichette che sono ID
     [
-        Resize((1024, 1024), Image.NEAREST),
+        Resize((1024, 1024), Image.NEAREST),  
     ]
 )
 
@@ -84,10 +84,10 @@ def main():
     print("Caricamento pesi modello da:", weightspath)
 
     encoder = ViT(img_size=(1024, 1024), patch_size=16, backbone_name="vit_base_patch14_reg4_dinov2")
-    # con --score pans il checkpoint deve essere quello fine-tunato col cosine classifier
+    # con --score pans il checkpoint deve essere quello su cui è stato fatto fine tuning col cosine classifier
     model = EoMT_estensione(encoder=encoder, num_classes=NUM_CLASSES, num_q=100, num_blocks=3,
                             cosine_classifier=(args.score == 'pans'))
-    state_dict = torch.load(weightspath, map_location='cpu')
+    state_dict = torch.load(weightspath, map_location='cpu') # si inseriscono nel modello appena creato i pesi salvati durante l'addestramento
     if "state_dict" in state_dict:  # checkpoint Lightning del fine-tuning
         state_dict = state_dict["state_dict"]
     model = load_my_state_dict(model, state_dict)
@@ -173,12 +173,11 @@ def main():
             #### CALCOLO SCORE DI ANOMALIA PER OGNI QUERY ####
 
             if args.score == 'pans':
-                # PAnS (Eq. 4-5): score = 1 - max_c (cos(q, w_c) + 1)/2
-                # sui prototipi appresi (pesi del cosine head)
+                # PAnS: score = 1 - max_c (cos(q, w_c) + 1)/2, sui prototipi appresi (pesi del cosine head)
                 q_norm = F.normalize(updated_queries, dim=-1)
                 w_norm = F.normalize(w_known, dim=-1)
                 cos_sim = q_norm @ w_norm.T                  # [Queries, NUM_CLASSES]
-                s_bar = (cos_sim + 1.0) / 2.0                # "probabilità binaria" in [0, 1]
+                s_bar = (cos_sim + 1.0) / 2.0                # probabilità binaria in [0, 1]
                 query_distances = 1.0 - s_bar.max(dim=1).values
 
             elif args.score == 'cosine-proto':
@@ -189,7 +188,7 @@ def main():
                 query_distances = (1.0 - cos_sim).min(dim=1).values
 
             else:
-                query_distances = torch.zeros(100, device=device) #vettore lungo quanto in numero di query
+                query_distances = torch.zeros(100, device=device) #vettore lungo quanto il numero di query
 
             # DISTANZA DI MAHALANOBIS (solo con --score mahalanobis, comportamento originale)
             for i in range(100 if args.score == 'mahalanobis' else 0):
