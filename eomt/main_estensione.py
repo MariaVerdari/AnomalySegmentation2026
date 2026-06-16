@@ -13,7 +13,6 @@ from lightning.pytorch.loops.fetchers import _DataFetcher, _DataLoaderIterDataFe
 from training.lightning_module_estensione import LightningModule_estensione
 from datasets.lightning_data_module import LightningDataModule
 
-# Suppress PyTorch FX warnings for DINOv3 models
 import os
 os.environ["TORCH_LOGS"] = "-dynamo"
 

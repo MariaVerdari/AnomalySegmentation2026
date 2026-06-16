@@ -1,6 +1,6 @@
 trainer:
   max_epochs: 15
-  # Validazione solo ogni 5 epoche (misura il mIoU, fa solo da guardia:
+  # Validazione solo ogni 5 epoche (misura il mIoU per controllo
   # le metriche di anomalia si calcolano dopo con eval_anomaly_ESTENSIONE)
   check_val_every_n_epoch: 5
 
@@ -10,13 +10,12 @@ trainer:
       init_args:
         dirpath: "/content/drive/MyDrive/Validation_Dataset/checkpoints"
         filename: "eomt-epoca-{epoch:02d}"
-        save_last: true     # last.ckpt sempre aggiornato, per il resume tra sessioni Colab
+        save_last: true     # last.ckpt sempre aggiornato per  Colab
         save_top_k: 2       # Conserva i 2 checkpoint con mIoU di validazione migliore
-        monitor: "metrics/val_iou_all"  # senza monitor, save_top_k=2 fa crashare Lightning all'avvio
+        monitor: "metrics/val_iou_all"  
         mode: "max"
         every_n_epochs: 1
 
-  # Logger CSV locale (niente wandb): metriche in metrics.csv dentro logs/
   logger:
     class_path: lightning.pytorch.loggers.CSVLogger
     init_args:
@@ -27,18 +26,18 @@ trainer:
 model:
   class_path: training.mask_classification_semantic_estensione.MaskClassificationSemantic_estensione
   init_args:
-    # Fine-tuning da modello già addestrato: annealing già completato,
+    # Fine-tuning da modello già addestrato
     # va tenuto spento per non riattivare la masked attention durante il training
     attn_mask_annealing_enabled: False
     # Checkpoint EoMT-Cityscapes da cui partire (lo stesso usato per calcolare i prototipi)
     ckpt_path: "/content/drive/MyDrive/Validation_Dataset/eomt_cityscapes.bin"
-    # Il vecchio class head lineare non va caricato dal checkpoint: viene sostituito
-    # dal cosine classifier (PAnS), inizializzato con i prototipi
+    # Il vecchio class head lineare non va caricato dal checkpoint, viene sostituitodal cosine classifier PAnS, inizializzato con i prototipi
     load_ckpt_class_head: False
     prototypes_file: "/content/drive/MyDrive/Validation_Dataset/cityscapes_prototypes.pt"
-    # Prototipi fissi: la cosine head resta congelata alle medie di classe (imprinting);
+    # Prototipi fissi: la cosine head resta congelata alle medie di classe 
     # la CE può solo avvicinare le query ai prototipi, non spostare i prototipi.
-    # Per ripetere l'esperimento precedente (head libera) rimettere False.
+
+    # Per head libera rimettere False.
     freeze_class_head: True
     # Warmup ridotto per il fine-tuning breve (default [500, 1000] = ~5 epoche)
     warmup_steps: [100, 200]
@@ -47,9 +46,9 @@ model:
       init_args:
         num_q: 100
         num_blocks: 3
-        # Cosine classifier in stile PAnS: i pesi del class head sono i prototipi
+        # Cosine classifier in stile PAnS, i pesi del class head sono i prototipi
         cosine_classifier: True
-        # Scala tau dei logit coseno del cosine classifier (Eq. 3 del paper PAnS)
+        # Scala tau dei logit coseno del cosine classifier (Eq paper pans)
         temperature: 10.0
         encoder:
           class_path: models.vit.ViT
